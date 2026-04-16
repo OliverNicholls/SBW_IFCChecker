@@ -1,6 +1,6 @@
 /**
  * IFC Checker Widget for StreamBIM
- * Loads IDS files and validates IFC model compliance
+ * Loads IDS files from StreamBIM documents and validates IFC model compliance
  */
 
 import { parseIDS, IDSDocument } from './ids-parser';
@@ -10,8 +10,9 @@ import { checkSpecification, SpecificationResult } from './checker';
 let streamBIM: any = null;
 let idsDocument: IDSDocument | null = null;
 let checkResults: Map<string, SpecificationResult> = new Map();
+let pickedObjects: any[] = [];
+let availableIDSFiles: Array<{ id: string; name: string }> = [];
 let isChecking = false;
-let idsUrl = '';
 
 // UI element references
 let root: HTMLElement | null = null;
@@ -40,6 +41,7 @@ async function init() {
     const projectId = await streamBIM.getProjectId();
     console.log('Connected to StreamBIM, project:', projectId);
     updateStatus('Connected to StreamBIM', 'success');
+    loadAvailableIDSFiles();
   } catch (err) {
     console.error('Failed to connect to StreamBIM:', err);
     updateStatus('Failed to connect to StreamBIM', 'error');
@@ -47,43 +49,207 @@ async function init() {
 }
 
 /**
- * Render initial UI
+ * Load available IDS files from StreamBIM documents
+ */
+async function loadAvailableIDSFiles() {
+  try {
+    updateStatus('Loading IDS files from documents...', 'info');
+
+    try {
+      // Try to fetch IDS files using makeApiRequest
+      const response = await streamBIM.makeApiRequest('/files?type=ids');
+
+      if (response && response.files && Array.isArray(response.files)) {
+        availableIDSFiles = response.files.map((file: any) => ({
+          id: file.id,
+          name: file.name || file.id
+        }));
+      }
+    } catch (error) {
+      console.warn('makeApiRequest not available, trying alternative method:', error);
+      availableIDSFiles = [];
+    }
+
+    if (availableIDSFiles.length > 0) {
+      updateStatus(`Loaded ${availableIDSFiles.length} IDS file(s)`, 'success');
+    } else {
+      updateStatus('No IDS files found in StreamBIM documents', 'warn');
+    }
+
+    renderUI();
+  } catch (error) {
+    console.error('Error loading IDS files:', error);
+    updateStatus('Error loading IDS files from StreamBIM', 'error');
+  }
+}
+
+/**
+ * Load selected IDS file
+ */
+async function loadSelectedIDS(fileId: string) {
+  const file = availableIDSFiles.find(f => f.id === fileId);
+  if (!file) return;
+
+  updateStatus(`Loading IDS file: ${file.name}...`, 'info');
+
+  try {
+    const idsContent = await streamBIM.makeApiRequest(`/files/${file.id}/content`);
+    idsDocument = parseIDS(typeof idsContent === 'string' ? idsContent : JSON.stringify(idsContent));
+
+    // Reset selections and results
+    pickedObjects = [];
+    checkResults.clear();
+
+    updateSpecsUI();
+    updateStatus(`Loaded IDS: ${idsDocument.title} (${idsDocument.specifications.length} specifications)`, 'success');
+
+    // Enable Run Checks button
+    const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
+    if (runBtn) runBtn.disabled = false;
+
+    renderUI();
+  } catch (err) {
+    console.error('Failed to load IDS:', err);
+    updateStatus(`Failed to load IDS: ${(err as Error).message}`, 'error');
+  }
+}
+
+/**
+ * Callback when user picks an object in the 3D view
+ */
+async function handlePickedObject(data: any) {
+  if (!idsDocument) {
+    updateStatus('Please load an IDS file first', 'warn');
+    return;
+  }
+
+  // Check if object is already selected
+  const existingIndex = pickedObjects.findIndex(obj => obj.guid === data.guid);
+  if (existingIndex !== -1) {
+    // Remove if already selected
+    pickedObjects.splice(existingIndex, 1);
+    updateStatus(`Deselected element. ${pickedObjects.length} element(s) selected.`, 'info');
+  } else {
+    // Add new selected object
+    pickedObjects.push(data);
+    updateStatus(`Selected element. ${pickedObjects.length} element(s) selected.`, 'info');
+  }
+
+  renderUI();
+}
+
+/**
+ * Validate all visible elements
+ */
+async function validateAllVisibleElements() {
+  if (!idsDocument || !streamBIM) {
+    updateStatus('Please load an IDS file first', 'warn');
+    return;
+  }
+
+  if (isChecking) {
+    updateStatus('Validation already in progress...', 'warn');
+    return;
+  }
+
+  try {
+    isChecking = true;
+    updateStatus('Finding all visible elements...', 'info');
+
+    // Search for all objects (empty query returns all)
+    const allObjects = await streamBIM.findObjects({});
+
+    if (!allObjects || allObjects.length === 0) {
+      updateStatus('No visible elements found in the 3D view', 'warn');
+      isChecking = false;
+      renderUI();
+      return;
+    }
+
+    pickedObjects = allObjects.map(guid => ({ guid }));
+    updateStatus(`Found ${allObjects.length} elements. Running checks...`, 'info');
+    isChecking = false;
+    renderUI();
+
+    // Run the checks
+    await runChecks();
+  } catch (error) {
+    isChecking = false;
+    console.error('Error validating all elements:', error);
+    updateStatus(`Error: ${(error as Error).message}`, 'error');
+  }
+}
+
+/**
+ * Clear selections
+ */
+function clearSelections() {
+  pickedObjects = [];
+  updateStatus('Selections cleared', 'info');
+  renderUI();
+}
+
+/**
+ * Render UI
  */
 function renderUI() {
   if (!root) return;
+
+  const selectedCount = pickedObjects.length;
+  const idsFileOptions = availableIDSFiles.length > 0
+    ? availableIDSFiles.map(file => `<option value="${file.id}">${file.name}</option>`).join('')
+    : '<option value="">No IDS files available</option>';
+
+  const selectionSummary = selectedCount > 0
+    ? `<div class="selection-summary">
+        <p><strong>${selectedCount}</strong> element(s) selected</p>
+      </div>`
+    : '<p class="info">No elements selected</p>';
+
+  const specsUI = idsDocument ? `<div id="specsContainer" class="specs-container"></div>` : '<p class="empty-state">Load an IDS file to see specifications</p>';
 
   root.innerHTML = `
     <div class="widget-container">
       <h1>IFC Checker</h1>
 
       <div class="section">
-        <h2>IDS File Configuration</h2>
-        <div class="input-group">
-          <label for="idsUrlInput">IDS File URL:</label>
-          <input
-            type="text"
-            id="idsUrlInput"
-            placeholder="https://example.com/requirements.ids"
-            class="input-field"
-          />
-          <button id="loadIdsBtn" class="btn btn-primary">Load IDS File</button>
-        </div>
+        <h2>IDS File Selection</h2>
+        <label for="idsFileSelect" class="label">Choose IDS File from StreamBIM Documents:</label>
+        <select
+          id="idsFileSelect"
+          class="input-field"
+          ${availableIDSFiles.length === 0 ? 'disabled' : ''}
+        >
+          <option value="">-- Select an IDS file --</option>
+          ${idsFileOptions}
+        </select>
       </div>
 
-      <div class="section">
-        <h2>Specifications</h2>
-        <div id="specsContainer" class="specs-container">
-          <p class="empty-state">Load an IDS file to see specifications</p>
+      ${idsDocument ? `
+        <div class="section">
+          <h2>Specifications (${idsDocument.specifications.length})</h2>
+          ${specsUI}
         </div>
-      </div>
+      ` : ''}
 
       <div class="section">
-        <div class="button-group">
-          <button id="runChecksBtn" class="btn btn-primary" disabled>Run Checks</button>
-          <button id="visualiseBtn" class="btn btn-success" disabled>Visualise Results</button>
-          <button id="clearBtn" class="btn btn-secondary">Clear All</button>
-        </div>
+        <h2>Element Selection</h2>
+        <p class="instruction">Click elements in the 3D view to select them, or use the button below to validate all visible elements</p>
+        <button class="btn btn-primary" onclick="validateAllVisibleElementsUI()" ${!idsDocument ? 'disabled' : ''}>
+          Validate All Visible Elements
+        </button>
+        <button class="btn btn-secondary" onclick="clearSelectionsUI()" ${selectedCount === 0 ? 'disabled' : ''}>
+          Clear Selection
+        </button>
       </div>
+
+      ${selectedCount > 0 ? `
+        <div class="section">
+          <h2>Selection Summary</h2>
+          ${selectionSummary}
+          <button id="runChecksBtn" class="btn btn-primary" ${!idsDocument ? 'disabled' : ''}>Run Validation on Selected Elements</button>
+        </div>
+      ` : ''}
 
       <div class="section">
         <h2>Results</h2>
@@ -96,68 +262,33 @@ function renderUI() {
     </div>
   `;
 
-  root.querySelector('#loadIdsBtn')?.addEventListener('click', loadIDS);
-  root.querySelector('#runChecksBtn')?.addEventListener('click', runChecks);
-  root.querySelector('#visualiseBtn')?.addEventListener('click', visualiseResults);
-  root.querySelector('#clearBtn')?.addEventListener('click', clearAll);
+  // Attach event listeners
+  const select = document.getElementById('idsFileSelect') as HTMLSelectElement;
+  if (select && availableIDSFiles.length > 0) {
+    select.addEventListener('change', (e) => {
+      const target = e.target as HTMLSelectElement;
+      if (target.value) {
+        loadSelectedIDS(target.value);
+      }
+    });
+  }
+
+  const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
+  if (runBtn) {
+    runBtn.addEventListener('click', runChecks);
+  }
+
+  // Expose global functions
+  (window as any).validateAllVisibleElementsUI = validateAllVisibleElements;
+  (window as any).clearSelectionsUI = clearSelections;
+  (window as any).highlightGUID = highlightGUID;
 
   statusDiv = document.getElementById('status');
   resultsDiv = document.getElementById('results');
-}
 
-/**
- * Load IDS file from URL
- */
-async function loadIDS() {
-  const input = document.getElementById('idsUrlInput') as HTMLInputElement;
-  const url = input?.value?.trim();
-
-  if (!url) {
-    updateStatus('Please enter an IDS file URL', 'error');
-    return;
-  }
-
-  idsUrl = url;
-  updateStatus('Loading IDS file...', 'info');
-
-  try {
-    let idsContent: string;
-
-    // Try to fetch via StreamBIM API first (for authenticated access to StreamBIM documents)
-    if (url.includes('/pgw/')) {
-      try {
-        const response = await streamBIM.makeApiRequest({
-          url,
-          method: 'GET',
-          accept: 'application/xml',
-        });
-        idsContent = typeof response === 'string' ? response : JSON.stringify(response);
-      } catch (err) {
-        console.warn('Failed to fetch via StreamBIM API, trying direct fetch:', err);
-        const resp = await fetch(url);
-        idsContent = await resp.text();
-      }
-    } else {
-      // Direct fetch for external URLs (CORS may apply)
-      const resp = await fetch(url);
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-      }
-      idsContent = await resp.text();
-    }
-
-    idsDocument = parseIDS(idsContent);
-
-    // Update UI
+  // Update specs UI if IDS document is loaded
+  if (idsDocument) {
     updateSpecsUI();
-    updateStatus(`Loaded IDS: ${idsDocument.title} (${idsDocument.specifications.length} specifications)`, 'success');
-
-    // Enable Run Checks button
-    const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
-    if (runBtn) runBtn.disabled = false;
-  } catch (err) {
-    console.error('Failed to load IDS:', err);
-    updateStatus(`Failed to load IDS: ${(err as Error).message}`, 'error');
   }
 }
 
@@ -186,21 +317,22 @@ function updateSpecsUI() {
  * Run checks on selected specifications
  */
 async function runChecks() {
-  if (!idsDocument || !streamBIM) return;
+  if (!idsDocument || !streamBIM || pickedObjects.length === 0) {
+    updateStatus('Please select at least one element', 'warn');
+    return;
+  }
 
   isChecking = true;
   checkResults.clear();
 
   const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
-  const visBtn = document.getElementById('visualiseBtn') as HTMLButtonElement;
   if (runBtn) runBtn.disabled = true;
-  if (visBtn) visBtn.disabled = true;
 
   // Get selected specs
   const checkboxes = document.querySelectorAll('input[data-spec-idx]:checked') as NodeListOf<HTMLInputElement>;
   const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.getAttribute('data-spec-idx') || '-1', 10));
 
-  updateStatus(`Running ${selectedIndices.length} specification(s)...`, 'info');
+  updateStatus(`Running ${selectedIndices.length} specification(s) on ${pickedObjects.length} element(s)...`, 'info');
 
   let completed = 0;
   for (const idx of selectedIndices) {
@@ -209,6 +341,14 @@ async function runChecks() {
 
     try {
       const result = await checkSpecification(spec, streamBIM);
+
+      // Filter results to only include picked objects
+      const pickedGuids = new Set(pickedObjects.map(o => o.guid));
+      result.failedObjects = result.failedObjects.filter(o => pickedGuids.has(o.guid));
+      result.passedObjects = result.passedObjects.filter(o => pickedGuids.has(o.guid));
+      result.failedCount = result.failedObjects.length;
+      result.passedCount = result.passedObjects.length;
+
       checkResults.set(spec.name, result);
       completed++;
       updateStatus(`Progress: ${completed}/${selectedIndices.length}`, 'info');
@@ -222,7 +362,6 @@ async function runChecks() {
   updateStatus(`Completed ${completed} specification checks`, 'success');
 
   if (runBtn) runBtn.disabled = false;
-  if (checkResults.size > 0 && visBtn) visBtn.disabled = false;
 }
 
 /**
@@ -298,76 +437,6 @@ async function highlightGUID(guid: string, event: Event) {
 }
 
 /**
- * Apply color coding to the 3D model
- */
-async function visualiseResults() {
-  if (!streamBIM || checkResults.size === 0) return;
-
-  updateStatus('Applying color coding...', 'info');
-
-  try {
-    const colorMap: Record<string, string> = {};
-    const legends: Record<string, string> = {
-      f44336: 'Failed',
-      '4caf50': 'Passed',
-    };
-
-    // Build color map from all results
-    for (const result of checkResults.values()) {
-      // Red for failed
-      for (const obj of result.failedObjects) {
-        colorMap[obj.guid] = 'f44336';
-      }
-      // Green for passed
-      for (const obj of result.passedObjects) {
-        colorMap[obj.guid] = '4caf50';
-      }
-    }
-
-    if (Object.keys(colorMap).length > 0) {
-      await streamBIM.colorCodeObjectsWithLegends({
-        data: colorMap,
-        legends,
-      });
-      updateStatus(`Color-coded ${Object.keys(colorMap).length} objects`, 'success');
-    } else {
-      updateStatus('No objects to color code', 'warn');
-    }
-  } catch (err) {
-    console.error('Failed to apply color coding:', err);
-    updateStatus(`Failed to apply color coding: ${(err as Error).message}`, 'error');
-  }
-}
-
-/**
- * Clear all results and color coding
- */
-async function clearAll() {
-  idsDocument = null;
-  checkResults.clear();
-  idsUrl = '';
-
-  const input = document.getElementById('idsUrlInput') as HTMLInputElement;
-  if (input) input.value = '';
-
-  const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
-  const visBtn = document.getElementById('visualiseBtn') as HTMLButtonElement;
-  if (runBtn) runBtn.disabled = true;
-  if (visBtn) visBtn.disabled = true;
-
-  renderUI();
-
-  try {
-    await streamBIM?.colorCodeObjectsWithLegends({ data: {} });
-    await streamBIM?.deHighlightAllObjects();
-  } catch (err) {
-    console.warn('Error clearing visualization:', err);
-  }
-
-  updateStatus('Cleared all', 'info');
-}
-
-/**
  * Update status message
  */
 function updateStatus(message: string, type: 'info' | 'success' | 'error' | 'warn' = 'info') {
@@ -382,16 +451,6 @@ function updateStatus(message: string, type: 'info' | 'success' | 'error' | 'war
     console.log(message);
   }
 }
-
-/**
- * Callback: Object picked in 3D view (if needed in future)
- */
-function handlePickedObject(data: any) {
-  console.log('Picked object:', data);
-}
-
-// Expose highlightGUID to window so onclick can call it
-(window as any).highlightGUID = highlightGUID;
 
 // Init on DOM ready
 if (document.readyState === 'loading') {
