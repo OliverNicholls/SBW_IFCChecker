@@ -1,460 +1,518 @@
-/**
- * IFC Checker Widget for StreamBIM
- * Loads IDS files from StreamBIM documents and validates IFC model compliance
- */
-
 import { parseIDS, IDSDocument } from './ids-parser';
 import { checkSpecification, SpecificationResult } from './checker';
 
-// Global state
-let streamBIM: any = null;
-let idsDocument: IDSDocument | null = null;
-let checkResults: Map<string, SpecificationResult> = new Map();
-let pickedObjects: any[] = [];
-let availableIDSFiles: Array<{ id: string; name: string }> = [];
-let isChecking = false;
+// ─── State ────────────────────────────────────────────────────────────────────
 
-// UI element references
-let root: HTMLElement | null = null;
-let statusDiv: HTMLElement | null = null;
-let resultsDiv: HTMLElement | null = null;
+let api: any = null;
+let ids: IDSDocument | null = null;
+let results: Map<string, SpecificationResult> = new Map();
+let activeTab: 'setup' | 'results' = 'setup';
+let running = false;
+let scope: 'all' | 'selected' = 'all';
+let selectedGuids = new Set<string>();
+let idsList: Array<{ id: string; name: string }> = [];
 
-/**
- * Entry point
- */
-async function init() {
-  root = document.getElementById('app');
-  if (!root) {
-    console.error('Root element #app not found');
-    return;
-  }
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
 
-  renderUI();
+async function boot() {
+  render();
 
   try {
-    streamBIM = await (window as any).StreamBIM.connectToParent(window, {
-      pickedObject: handlePickedObject,
-      spacesChanged: () => {},
-      cameraChanged: () => {},
+    api = await (window as any).StreamBIM.connectToParent(window, {
+      pickedObject: onPick,
     });
-
-    const projectId = await streamBIM.getProjectId();
-    console.log('Connected to StreamBIM, project:', projectId);
-    updateStatus('Connected to StreamBIM', 'success');
-    loadAvailableIDSFiles();
-  } catch (err) {
-    console.error('Failed to connect to StreamBIM:', err);
-    updateStatus('Failed to connect to StreamBIM', 'error');
+    log('Connected to StreamBIM', 'success');
+    loadIDSList();
+  } catch {
+    log('Failed to connect to StreamBIM', 'error');
   }
 }
 
-/**
- * Load available IDS files from StreamBIM documents
- */
-async function loadAvailableIDSFiles() {
-  try {
-    updateStatus('Loading IDS files from documents...', 'info');
+function onPick(data: any) {
+  if (scope !== 'selected') return;
+  const guid: string | undefined = data?.guid;
+  if (!guid) return;
 
-    try {
-      // Try to fetch IDS files using makeApiRequest
-      const response = await streamBIM.makeApiRequest('/files?type=ids');
-
-      if (response && response.files && Array.isArray(response.files)) {
-        availableIDSFiles = response.files.map((file: any) => ({
-          id: file.id,
-          name: file.name || file.id
-        }));
-      }
-    } catch (error) {
-      console.warn('makeApiRequest not available, trying alternative method:', error);
-      availableIDSFiles = [];
-    }
-
-    if (availableIDSFiles.length > 0) {
-      updateStatus(`Loaded ${availableIDSFiles.length} IDS file(s)`, 'success');
-    } else {
-      updateStatus('No IDS files found in StreamBIM documents', 'warn');
-    }
-
-    renderUI();
-  } catch (error) {
-    console.error('Error loading IDS files:', error);
-    updateStatus('Error loading IDS files from StreamBIM', 'error');
-  }
-}
-
-/**
- * Load selected IDS file
- */
-async function loadSelectedIDS(fileId: string) {
-  const file = availableIDSFiles.find(f => f.id === fileId);
-  if (!file) return;
-
-  updateStatus(`Loading IDS file: ${file.name}...`, 'info');
-
-  try {
-    const idsContent = await streamBIM.makeApiRequest(`/files/${file.id}/content`);
-    idsDocument = parseIDS(typeof idsContent === 'string' ? idsContent : JSON.stringify(idsContent));
-
-    // Reset selections and results
-    pickedObjects = [];
-    checkResults.clear();
-
-    updateSpecsUI();
-    updateStatus(`Loaded IDS: ${idsDocument.title} (${idsDocument.specifications.length} specifications)`, 'success');
-
-    // Enable Run Checks button
-    const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
-    if (runBtn) runBtn.disabled = false;
-
-    renderUI();
-  } catch (err) {
-    console.error('Failed to load IDS:', err);
-    updateStatus(`Failed to load IDS: ${(err as Error).message}`, 'error');
-  }
-}
-
-/**
- * Callback when user picks an object in the 3D view
- */
-async function handlePickedObject(data: any) {
-  if (!idsDocument) {
-    updateStatus('Please load an IDS file first', 'warn');
-    return;
-  }
-
-  // Check if object is already selected
-  const existingIndex = pickedObjects.findIndex(obj => obj.guid === data.guid);
-  if (existingIndex !== -1) {
-    // Remove if already selected
-    pickedObjects.splice(existingIndex, 1);
-    updateStatus(`Deselected element. ${pickedObjects.length} element(s) selected.`, 'info');
+  if (selectedGuids.has(guid)) {
+    selectedGuids.delete(guid);
   } else {
-    // Add new selected object
-    pickedObjects.push(data);
-    updateStatus(`Selected element. ${pickedObjects.length} element(s) selected.`, 'info');
+    selectedGuids.add(guid);
   }
 
-  renderUI();
+  log(`${selectedGuids.size} element(s) selected`, 'info');
+  const counter = document.getElementById('sel-count');
+  if (counter) counter.textContent = `${selectedGuids.size} selected`;
 }
 
-/**
- * Validate all visible elements
- */
-async function validateAllVisibleElements() {
-  if (!idsDocument || !streamBIM) {
-    updateStatus('Please load an IDS file first', 'warn');
+// ─── IDS Loading ──────────────────────────────────────────────────────────────
+
+async function loadIDSList() {
+  try {
+    const res = await api.makeApiRequest({ url: '/files?type=ids' });
+    idsList = (res?.files ?? []).map((f: any) => ({ id: f.id, name: f.name || f.id }));
+  } catch {
+    idsList = [];
+  }
+  renderSetupSection();
+}
+
+async function loadIDSFromServer(fileId: string) {
+  log('Loading IDS file…', 'info');
+  try {
+    const raw = await api.makeApiRequest({ url: `/files/${fileId}/content` });
+    const xml = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    ids = parseIDS(xml);
+    results.clear();
+    log(`Loaded: ${ids.title} — ${ids.specifications.length} spec(s)`, 'success');
+    renderSetupSection();
+  } catch (err) {
+    log(`Failed to load IDS: ${(err as Error).message}`, 'error');
+  }
+}
+
+function loadIDSFromFile(file: File) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      ids = parseIDS(e.target?.result as string);
+      results.clear();
+      log(`Loaded: ${ids.title} — ${ids.specifications.length} spec(s)`, 'success');
+      renderSetupSection();
+    } catch (err) {
+      log(`Invalid IDS file: ${(err as Error).message}`, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ─── Checks ───────────────────────────────────────────────────────────────────
+
+async function runChecks() {
+  if (!ids || !api || running) return;
+
+  const enabled = getEnabledSpecs();
+  if (enabled.length === 0) {
+    log('No specifications selected', 'warn');
     return;
   }
 
-  if (isChecking) {
-    updateStatus('Validation already in progress...', 'warn');
-    return;
+  running = true;
+  results.clear();
+  setRunBtn(true);
+  log(`Running ${enabled.length} specification(s)…`, 'info');
+
+  let done = 0;
+  for (const spec of enabled) {
+    try {
+      const result = await checkSpecification(spec, api);
+
+      if (scope === 'selected' && selectedGuids.size > 0) {
+        result.failedObjects = result.failedObjects.filter(o => selectedGuids.has(o.guid));
+        result.passedObjects = result.passedObjects.filter(o => selectedGuids.has(o.guid));
+        result.failedCount = result.failedObjects.length;
+        result.passedCount = result.passedObjects.length;
+        result.applicableCount = result.failedCount + result.passedCount;
+      }
+
+      results.set(spec.name, result);
+    } catch (err) {
+      console.error('Spec error:', err);
+    }
+    done++;
+    log(`${done} / ${enabled.length} specifications checked…`, 'info');
   }
+
+  running = false;
+  setRunBtn(false);
+  applyColorCoding();
+  activeTab = 'results';
+  render();
+  log('Checks complete', 'success');
+}
+
+function getEnabledSpecs() {
+  if (!ids) return [];
+  return ids.specifications.filter((_, i) => {
+    const cb = document.querySelector<HTMLInputElement>(`[data-spec="${i}"]`);
+    return !cb || cb.checked;
+  });
+}
+
+function setRunBtn(disabled: boolean) {
+  const btn = document.getElementById('run-btn') as HTMLButtonElement | null;
+  if (btn) {
+    btn.disabled = disabled;
+    btn.textContent = disabled ? 'Running…' : 'Run IDS Checks';
+  }
+}
+
+// ─── 3D Color Coding ──────────────────────────────────────────────────────────
+
+async function applyColorCoding() {
+  if (!api) return;
+
+  const colorMap: Record<string, string> = {};
+  for (const r of results.values()) {
+    for (const obj of r.passedObjects) colorMap[obj.guid] ??= '#4caf50';
+    for (const obj of r.failedObjects) colorMap[obj.guid] = '#f44336'; // failures win
+  }
+
+  if (Object.keys(colorMap).length === 0) return;
 
   try {
-    isChecking = true;
-    updateStatus('Finding all visible elements...', 'info');
-
-    // Search for all objects (empty query returns all)
-    const allObjects = await streamBIM.findObjects({});
-
-    if (!allObjects || allObjects.length === 0) {
-      updateStatus('No visible elements found in the 3D view', 'warn');
-      isChecking = false;
-      renderUI();
-      return;
-    }
-
-    pickedObjects = allObjects.map(guid => ({ guid }));
-    updateStatus(`Found ${allObjects.length} elements. Running checks...`, 'info');
-    isChecking = false;
-    renderUI();
-
-    // Run the checks
-    await runChecks();
-  } catch (error) {
-    isChecking = false;
-    console.error('Error validating all elements:', error);
-    updateStatus(`Error: ${(error as Error).message}`, 'error');
+    await api.colorCodeObjectsWithLegends({
+      data: colorMap,
+      legends: [
+        { color: '#4caf50', label: 'Pass' },
+        { color: '#f44336', label: 'Fail' },
+      ],
+    });
+  } catch {
+    try { await api.colorCodeObjects(colorMap); } catch { /* not supported */ }
   }
 }
 
-/**
- * Clear selections
- */
-function clearSelections() {
-  pickedObjects = [];
-  updateStatus('Selections cleared', 'info');
-  renderUI();
+async function clearColorCoding() {
+  if (!api) return;
+  try { await api.colorCodeObjects({}); } catch { /* not supported */ }
 }
 
-/**
- * Render UI
- */
-function renderUI() {
-  if (!root) return;
+// ─── Navigation ───────────────────────────────────────────────────────────────
 
-  const selectedCount = pickedObjects.length;
-  const idsFileOptions = availableIDSFiles.length > 0
-    ? availableIDSFiles.map(file => `<option value="${file.id}">${file.name}</option>`).join('')
-    : '<option value="">No IDS files available</option>';
+async function gotoObject(guid: string) {
+  if (!api) return;
+  try {
+    await api.deHighlightAllObjects();
+    await api.gotoObject(guid);
+    await api.highlightObject(guid);
+  } catch { /* viewer not ready */ }
+}
 
-  const selectionSummary = selectedCount > 0
-    ? `<div class="selection-summary">
-        <p><strong>${selectedCount}</strong> element(s) selected</p>
-      </div>`
-    : '<p class="info">No elements selected</p>';
+// ─── Export ───────────────────────────────────────────────────────────────────
 
-  const specsUI = idsDocument ? `<div id="specsContainer" class="specs-container"></div>` : '<p class="empty-state">Load an IDS file to see specifications</p>';
+function exportCSV() {
+  const rows = ['Specification,Status,Applicable,Passed,Failed,GUID,Name,Failure Reasons'];
 
-  root.innerHTML = `
-    <div class="widget-container">
-      <h1>IFC Checker</h1>
+  for (const r of results.values()) {
+    const spec = `"${r.specification.name.replace(/"/g, '""')}"`;
 
-      <div class="section">
-        <h2>IDS File Selection</h2>
-        <label for="idsFileSelect" class="label">Choose IDS File from StreamBIM Documents:</label>
-        <select
-          id="idsFileSelect"
-          class="input-field"
-          ${availableIDSFiles.length === 0 ? 'disabled' : ''}
-        >
-          <option value="">-- Select an IDS file --</option>
-          ${idsFileOptions}
-        </select>
-      </div>
+    if (r.failedObjects.length === 0 && r.passedObjects.length === 0) {
+      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},,,`);
+    }
 
-      ${idsDocument ? `
-        <div class="section">
-          <h2>Specifications (${idsDocument.specifications.length})</h2>
-          ${specsUI}
+    for (const obj of r.failedObjects) {
+      const name    = `"${obj.name.replace(/"/g, '""')}"`;
+      const reasons = `"${obj.failedRequirements.join('; ').replace(/"/g, '""')}"`;
+      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},${obj.guid},${name},${reasons}`);
+    }
+
+    for (const obj of r.passedObjects) {
+      const name = `"${obj.name.replace(/"/g, '""')}"`;
+      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},${obj.guid},${name},`);
+    }
+  }
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `ids-check-${new Date().toISOString().slice(0, 10)}.csv`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+
+function render() {
+  const app = document.getElementById('app');
+  if (!app) return;
+
+  const totalFailed  = Array.from(results.values()).reduce((s, r) => s + r.failedCount, 0);
+  const hasResults   = results.size > 0;
+  const badgeClass   = totalFailed > 0 ? 'fail' : 'pass';
+  const badgeText    = totalFailed > 0 ? `${totalFailed} failures` : 'All pass';
+
+  app.innerHTML = `
+    <div class="widget">
+      <header>
+        <h1>IFC Checker</h1>
+        <div class="tabs">
+          <button class="tab${activeTab === 'setup' ? ' active' : ''}" data-tab="setup">Setup</button>
+          <button class="tab${activeTab === 'results' ? ' active' : ''}" data-tab="results">
+            Results${hasResults ? `<span class="badge ${badgeClass}">${badgeText}</span>` : ''}
+          </button>
         </div>
-      ` : ''}
-
-      <div class="section">
-        <h2>Element Selection</h2>
-        <p class="instruction">Click elements in the 3D view to select them, or use the button below to validate all visible elements</p>
-        <button class="btn btn-primary" onclick="validateAllVisibleElementsUI()" ${!idsDocument ? 'disabled' : ''}>
-          Validate All Visible Elements
-        </button>
-        <button class="btn btn-secondary" onclick="clearSelectionsUI()" ${selectedCount === 0 ? 'disabled' : ''}>
-          Clear Selection
-        </button>
-      </div>
-
-      ${selectedCount > 0 ? `
-        <div class="section">
-          <h2>Selection Summary</h2>
-          ${selectionSummary}
-          <button id="runChecksBtn" class="btn btn-primary" ${!idsDocument ? 'disabled' : ''}>Run Validation on Selected Elements</button>
-        </div>
-      ` : ''}
-
-      <div class="section">
-        <h2>Results</h2>
-        <div id="results" class="results-container">
-          <p class="empty-state">Run checks to see results</p>
-        </div>
-      </div>
-
-      <div id="status" class="status"></div>
+      </header>
+      <main id="main-content">
+        ${activeTab === 'setup' ? setupTabHTML() : resultsTabHTML()}
+      </main>
+      <footer id="status-bar" class="status-bar"></footer>
     </div>
   `;
 
-  // Attach event listeners
-  const select = document.getElementById('idsFileSelect') as HTMLSelectElement;
-  if (select && availableIDSFiles.length > 0) {
-    select.addEventListener('change', (e) => {
-      const target = e.target as HTMLSelectElement;
-      if (target.value) {
-        loadSelectedIDS(target.value);
+  attachEvents();
+}
+
+function renderSetupSection() {
+  if (activeTab !== 'setup') { render(); return; }
+  const main = document.getElementById('main-content');
+  if (main) { main.innerHTML = setupTabHTML(); attachEvents(); }
+}
+
+function setupTabHTML(): string {
+  const fileOptions = idsList
+    .map(f => `<option value="${f.id}">${escHtml(f.name)}</option>`)
+    .join('');
+
+  const specsHtml = ids
+    ? ids.specifications.map((spec, i) => `
+        <label class="spec-row">
+          <input type="checkbox" data-spec="${i}" checked />
+          <span class="spec-name">${escHtml(spec.name)}</span>
+          <span class="spec-meta">${spec.requirements.length} req</span>
+        </label>
+        ${spec.description ? `<p class="spec-desc">${escHtml(spec.description)}</p>` : ''}
+      `).join('')
+    : '';
+
+  const selBadge = scope === 'selected'
+    ? `<span class="badge" id="sel-count">${selectedGuids.size} selected</span>`
+    : '';
+
+  return `
+    <section>
+      <h2>IDS Source</h2>
+      ${idsList.length > 0 ? `
+        <label for="ids-select">StreamBIM document</label>
+        <select id="ids-select">
+          <option value="">— choose an IDS file —</option>
+          ${fileOptions}
+        </select>
+        <div class="divider">or</div>
+      ` : ''}
+      <label for="ids-file">Upload local IDS file</label>
+      <input type="file" id="ids-file" accept=".ids,.xml" />
+      ${ids ? `<p class="loaded">✓ ${escHtml(ids.title)} — ${ids.specifications.length} specification(s)</p>` : ''}
+    </section>
+
+    ${ids ? `
+      <section>
+        <h2>Specifications</h2>
+        <div class="spec-list">${specsHtml}</div>
+      </section>
+
+      <section>
+        <h2>Scope</h2>
+        <div class="scope-toggle">
+          <label class="scope-option">
+            <input type="radio" name="scope" value="all" ${scope === 'all' ? 'checked' : ''} />
+            All objects in model
+          </label>
+          <label class="scope-option">
+            <input type="radio" name="scope" value="selected" ${scope === 'selected' ? 'checked' : ''} />
+            Selected objects only ${selBadge}
+          </label>
+          ${scope === 'selected' ? `<button id="clear-sel" class="btn-text">Clear selection</button>` : ''}
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="run-btn" class="btn-primary" ${running ? 'disabled' : ''}>
+          ${running ? 'Running…' : 'Run IDS Checks'}
+        </button>
+      </div>
+    ` : ''}
+  `;
+}
+
+function resultsTabHTML(): string {
+  if (results.size === 0) {
+    return `<p class="empty">Run checks on the Setup tab to see results here.</p>`;
+  }
+
+  const all            = Array.from(results.values());
+  const totalApplicable = all.reduce((s, r) => s + r.applicableCount, 0);
+  const totalPassed    = all.reduce((s, r) => s + r.passedCount, 0);
+  const totalFailed    = all.reduce((s, r) => s + r.failedCount, 0);
+  const passRate       = totalApplicable > 0
+    ? Math.round((totalPassed / totalApplicable) * 100)
+    : 0;
+
+  const cards = all.map((r, i) => {
+    const icon   = r.status === 'pass' ? '✓' : r.status === 'error' ? '⚠' : '✗';
+    const cls    = r.status;
+    const stats  = `${r.passedCount} ✓  ${r.failedCount} ✗`;
+
+    const failedRows = r.failedObjects.map(obj => `
+      <div class="obj-row fail" data-guid="${obj.guid}">
+        <span class="obj-name">${escHtml(obj.name)}</span>
+        <span class="obj-guid">${obj.guid.slice(0, 8)}…</span>
+        <ul class="reasons">${obj.failedRequirements.map(rr => `<li>${escHtml(rr)}</li>`).join('')}</ul>
+      </div>
+    `).join('');
+
+    const passedRows = r.passedObjects.map(obj => `
+      <div class="obj-row pass" data-guid="${obj.guid}">
+        <span class="obj-name">${escHtml(obj.name)}</span>
+        <span class="obj-guid">${obj.guid.slice(0, 8)}…</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="result-card ${cls}">
+        <div class="result-header" data-toggle="${i}">
+          <span class="result-icon">${icon}</span>
+          <span class="result-title">${escHtml(r.specification.name)}</span>
+          <span class="result-stats">${stats}</span>
+          <span class="chevron" id="chev-${i}">▶</span>
+        </div>
+        <div class="result-body" id="body-${i}" hidden>
+          ${r.errorMessage ? `<p class="error-msg">${escHtml(r.errorMessage)}</p>` : ''}
+          ${r.applicableCount === 0 ? '<p class="muted">No applicable objects found in model</p>' : ''}
+          ${failedRows ? `<div class="obj-list"><h4>Failed (${r.failedCount})</h4>${failedRows}</div>` : ''}
+          ${passedRows ? `
+            <details class="passed-details">
+              <summary>Passed (${r.passedCount})</summary>
+              <div class="obj-list">${passedRows}</div>
+            </details>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="summary">
+      <div class="stat">
+        <span class="stat-value">${all.length}</span>
+        <span class="stat-label">Specs</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">${totalApplicable}</span>
+        <span class="stat-label">Objects</span>
+      </div>
+      <div class="stat ${totalFailed > 0 ? 'fail' : 'pass'}">
+        <span class="stat-value">${totalFailed}</span>
+        <span class="stat-label">Failures</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">${passRate}%</span>
+        <span class="stat-label">Pass rate</span>
+      </div>
+    </div>
+    <div class="result-actions">
+      <button id="export-btn" class="btn-secondary">Export CSV</button>
+      <button id="clear-colors-btn" class="btn-text">Clear 3D colours</button>
+    </div>
+    <div class="result-list">${cards}</div>
+  `;
+}
+
+function attachEvents() {
+  // Tab switching
+  document.querySelectorAll<HTMLElement>('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeTab = tab.dataset.tab as 'setup' | 'results';
+      render();
+    });
+  });
+
+  // IDS from StreamBIM
+  document.getElementById('ids-select')?.addEventListener('change', (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    if (v) loadIDSFromServer(v);
+  });
+
+  // IDS from local file
+  document.getElementById('ids-file')?.addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) loadIDSFromFile(file);
+  });
+
+  // Scope radios
+  document.querySelectorAll<HTMLInputElement>('input[name="scope"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      scope = radio.value as 'all' | 'selected';
+      if (scope === 'all') selectedGuids.clear();
+      renderSetupSection();
+    });
+  });
+
+  // Clear selection
+  document.getElementById('clear-sel')?.addEventListener('click', () => {
+    selectedGuids.clear();
+    renderSetupSection();
+  });
+
+  // Run checks
+  document.getElementById('run-btn')?.addEventListener('click', runChecks);
+
+  // Export
+  document.getElementById('export-btn')?.addEventListener('click', exportCSV);
+
+  // Clear 3D colours
+  document.getElementById('clear-colors-btn')?.addEventListener('click', clearColorCoding);
+
+  // Result card expand/collapse
+  document.querySelectorAll<HTMLElement>('[data-toggle]').forEach(header => {
+    header.addEventListener('click', () => {
+      const idx  = header.dataset.toggle;
+      const body = document.getElementById(`body-${idx}`);
+      const chev = document.getElementById(`chev-${idx}`);
+      if (body) {
+        const isHidden = body.toggleAttribute('hidden');
+        if (chev) chev.textContent = isHidden ? '▶' : '▼';
       }
     });
-  }
+  });
 
-  const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
-  if (runBtn) {
-    runBtn.addEventListener('click', runChecks);
-  }
+  // Object click → navigate in 3D
+  document.querySelectorAll<HTMLElement>('[data-guid]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const guid = el.dataset.guid;
+      if (guid) gotoObject(guid);
+    });
+  });
+}
 
-  // Expose global functions
-  (window as any).validateAllVisibleElementsUI = validateAllVisibleElements;
-  (window as any).clearSelectionsUI = clearSelections;
-  (window as any).highlightGUID = highlightGUID;
+// ─── Status bar ───────────────────────────────────────────────────────────────
 
-  statusDiv = document.getElementById('status');
-  resultsDiv = document.getElementById('results');
+let statusTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Update specs UI if IDS document is loaded
-  if (idsDocument) {
-    updateSpecsUI();
+function log(msg: string, type: 'info' | 'success' | 'error' | 'warn' = 'info') {
+  console[type === 'error' ? 'error' : type === 'warn' ? 'warn' : 'log'](`[IFC Checker] ${msg}`);
+
+  const bar = document.getElementById('status-bar');
+  if (!bar) return;
+
+  if (statusTimer) clearTimeout(statusTimer);
+  bar.textContent = msg;
+  bar.className   = `status-bar ${type}`;
+
+  if (type === 'success' || type === 'info') {
+    statusTimer = setTimeout(() => {
+      const b = document.getElementById('status-bar');
+      if (b) { b.textContent = ''; b.className = 'status-bar'; }
+    }, 5000);
   }
 }
 
-/**
- * Update specs list in UI
- */
-function updateSpecsUI() {
-  const container = document.getElementById('specsContainer');
-  if (!container || !idsDocument) return;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  container.innerHTML = idsDocument.specifications
-    .map((spec, idx) => `
-      <div class="spec-item">
-        <label class="spec-checkbox">
-          <input type="checkbox" data-spec-idx="${idx}" checked />
-          <span class="spec-name">${spec.name}</span>
-          <span class="spec-count">${spec.applicability.length} applicability, ${spec.requirements.length} requirements</span>
-        </label>
-        ${spec.description ? `<p class="spec-description">${spec.description}</p>` : ''}
-      </div>
-    `)
-    .join('');
+function escHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-/**
- * Run checks on selected specifications
- */
-async function runChecks() {
-  if (!idsDocument || !streamBIM || pickedObjects.length === 0) {
-    updateStatus('Please select at least one element', 'warn');
-    return;
-  }
+// ─── Init ─────────────────────────────────────────────────────────────────────
 
-  isChecking = true;
-  checkResults.clear();
-
-  const runBtn = document.getElementById('runChecksBtn') as HTMLButtonElement;
-  if (runBtn) runBtn.disabled = true;
-
-  // Get selected specs
-  const checkboxes = document.querySelectorAll('input[data-spec-idx]:checked') as NodeListOf<HTMLInputElement>;
-  const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.getAttribute('data-spec-idx') || '-1', 10));
-
-  updateStatus(`Running ${selectedIndices.length} specification(s) on ${pickedObjects.length} element(s)...`, 'info');
-
-  let completed = 0;
-  for (const idx of selectedIndices) {
-    const spec = idsDocument.specifications[idx];
-    if (!spec) continue;
-
-    try {
-      const result = await checkSpecification(spec, streamBIM);
-
-      // Filter results to only include picked objects
-      const pickedGuids = new Set(pickedObjects.map(o => o.guid));
-      result.failedObjects = result.failedObjects.filter(o => pickedGuids.has(o.guid));
-      result.passedObjects = result.passedObjects.filter(o => pickedGuids.has(o.guid));
-      result.failedCount = result.failedObjects.length;
-      result.passedCount = result.passedObjects.length;
-
-      checkResults.set(spec.name, result);
-      completed++;
-      updateStatus(`Progress: ${completed}/${selectedIndices.length}`, 'info');
-    } catch (err) {
-      console.error(`Error checking specification '${spec.name}':`, err);
-    }
-  }
-
-  isChecking = false;
-  updateResultsUI();
-  updateStatus(`Completed ${completed} specification checks`, 'success');
-
-  if (runBtn) runBtn.disabled = false;
-}
-
-/**
- * Update results display
- */
-function updateResultsUI() {
-  if (!resultsDiv) return;
-
-  if (checkResults.size === 0) {
-    resultsDiv.innerHTML = '<p class="empty-state">No results to display</p>';
-    return;
-  }
-
-  const results = Array.from(checkResults.values());
-  const html = results
-    .map((result, idx) => {
-      const statusClass = result.status === 'pass' ? 'status-pass' : result.status === 'error' ? 'status-error' : 'status-fail';
-      const statusIcon = result.status === 'pass' ? '✓' : result.status === 'error' ? '⚠' : '✗';
-
-      return `
-        <div class="result-card ${statusClass}">
-          <div class="result-header" onclick="document.getElementById('result-body-${idx}').toggleAttribute('hidden')">
-            <span class="result-status">${statusIcon}</span>
-            <span class="result-name">${result.specification.name}</span>
-            <span class="result-counts">Pass: ${result.passedCount} | Fail: ${result.failedCount}</span>
-          </div>
-          <div class="result-body" id="result-body-${idx}" hidden>
-            ${result.errorMessage ? `<p class="error-message">${result.errorMessage}</p>` : ''}
-            ${result.applicableCount > 0 ? `<p>Applicable objects: ${result.applicableCount}</p>` : ''}
-            ${result.failedObjects.length > 0 ? `
-              <div class="failed-objects">
-                <h4>Failed Objects:</h4>
-                <ul>
-                  ${result.failedObjects
-                    .map(
-                      obj => `
-                    <li class="failed-object">
-                      <span class="guid" onclick="window.highlightGUID('${obj.guid}', event)">${obj.guid.substring(0, 8)}...</span>
-                      <span class="name">${obj.name}</span>
-                      <div class="failure-reasons">
-                        ${obj.failedRequirements.map(r => `<span class="reason">${r}</span>`).join('')}
-                      </div>
-                    </li>
-                  `
-                    )
-                    .join('')}
-                </ul>
-              </div>
-            ` : ''}
-          </div>
-        </div>
-      `;
-    })
-    .join('');
-
-  resultsDiv.innerHTML = html;
-}
-
-/**
- * Highlight a GUID in the 3D view
- */
-async function highlightGUID(guid: string, event: Event) {
-  event.stopPropagation();
-  if (!streamBIM) return;
-
-  try {
-    await streamBIM.deHighlightAllObjects();
-    await streamBIM.gotoObject(guid);
-    await streamBIM.highlightObject(guid);
-  } catch (err) {
-    console.error('Failed to highlight object:', err);
-  }
-}
-
-/**
- * Update status message
- */
-function updateStatus(message: string, type: 'info' | 'success' | 'error' | 'warn' = 'info') {
-  if (!statusDiv) return;
-
-  statusDiv.textContent = message;
-  statusDiv.className = `status status-${type}`;
-
-  if (type === 'error' || type === 'warn') {
-    console.warn(message);
-  } else {
-    console.log(message);
-  }
-}
-
-// Init on DOM ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', boot);
 } else {
-  init();
+  boot();
 }

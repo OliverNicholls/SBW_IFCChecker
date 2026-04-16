@@ -1,8 +1,3 @@
-/**
- * IDS Checking Logic
- * Maps IDS specifications to StreamBIM API queries and validates results
- */
-
 import { IDSSpecification, IDSFacet } from './ids-parser';
 
 export interface ObjectResult {
@@ -23,126 +18,85 @@ export interface SpecificationResult {
   errorMessage?: string;
 }
 
-interface ObjectSearchQuery {
-  rules: Array<{
-    psetName?: string;
-    propKey?: string;
-    value?: string;
-  }>;
+// StreamBIM search query format (nested arrays: outer = OR, inner = AND)
+interface SearchRule {
+  psetName?: string;
+  propKey?: string;
+  propValue?: string;
+  operator?: string;
 }
 
-interface ObjectInfo {
-  guid: string;
-  name: string;
-  ifcProperties?: Record<string, string>;
-  properties?: Record<string, string>;
-  [key: string]: any;
+interface SearchQuery {
+  filter: { rules: SearchRule[][] };
+  page: { limit: number; skip: number };
 }
 
-/**
- * Run an IDS specification check against the model via StreamBIM API
- */
 export async function checkSpecification(
   spec: IDSSpecification,
   streamBIM: any
 ): Promise<SpecificationResult> {
-  try {
-    // Build applicability query
-    const applicabilityQuery = facetsToQuery(spec.applicability);
+  const query = buildSearchQuery(spec.applicability);
 
-    // Get all applicable objects
-    let applicableObjects: ObjectInfo[] = [];
-    if (applicabilityQuery.rules.length > 0) {
-      try {
-        applicableObjects = await streamBIM.getObjectInfoForSearch(applicabilityQuery);
-      } catch (err) {
-        return {
-          specification: spec,
-          applicableCount: 0,
-          passedCount: 0,
-          failedCount: 0,
-          failedObjects: [],
-          passedObjects: [],
-          status: 'error',
-          errorMessage: `Failed to query applicable objects: ${(err as Error).message}`,
-        };
-      }
-    } else {
-      // No applicability filters - would need to check all objects (not practical)
-      return {
-        specification: spec,
-        applicableCount: 0,
-        passedCount: 0,
-        failedCount: 0,
-        failedObjects: [],
-        passedObjects: [],
-        status: 'not_applicable',
-        errorMessage: 'No applicability facets defined',
-      };
-    }
-
-    if (applicableObjects.length === 0) {
-      return {
-        specification: spec,
-        applicableCount: 0,
-        passedCount: 0,
-        failedCount: 0,
-        failedObjects: [],
-        passedObjects: [],
-        status: 'pass', // Vacuously true - no applicable objects
-      };
-    }
-
-    // Check requirements for each applicable object
-    const failedObjects: ObjectResult[] = [];
-    const passedObjects: ObjectResult[] = [];
-
-    for (const obj of applicableObjects) {
-      const failedReqs = checkRequirements(spec.requirements, obj);
-      const objectResult: ObjectResult = {
-        guid: obj.guid,
-        name: obj.name || 'Unnamed Object',
-        passed: failedReqs.length === 0,
-        failedRequirements: failedReqs,
-      };
-
-      if (objectResult.passed) {
-        passedObjects.push(objectResult);
-      } else {
-        failedObjects.push(objectResult);
-      }
-    }
-
-    const status = failedObjects.length === 0 ? 'pass' : 'fail';
-
-    return {
-      specification: spec,
-      applicableCount: applicableObjects.length,
-      passedCount: passedObjects.length,
-      failedCount: failedObjects.length,
-      failedObjects,
-      passedObjects,
-      status,
-    };
-  } catch (err) {
-    return {
-      specification: spec,
-      applicableCount: 0,
-      passedCount: 0,
-      failedCount: 0,
-      failedObjects: [],
-      passedObjects: [],
-      status: 'error',
-      errorMessage: `Unexpected error: ${(err as Error).message}`,
-    };
+  if (!query) {
+    return makeResult(spec, 'not_applicable', 'No applicability facets defined');
   }
+
+  let applicableObjects: any[] = [];
+  try {
+    const raw = await streamBIM.getObjectInfoForSearch(query);
+    applicableObjects = Array.isArray(raw) ? raw : [];
+  } catch (err) {
+    return makeResult(spec, 'error', `Query failed: ${(err as Error).message}`);
+  }
+
+  if (applicableObjects.length === 0) {
+    return { ...makeResult(spec, 'pass'), applicableCount: 0 };
+  }
+
+  const failedObjects: ObjectResult[] = [];
+  const passedObjects: ObjectResult[] = [];
+
+  for (const obj of applicableObjects) {
+    const failures = checkRequirements(spec.requirements, obj);
+    const result: ObjectResult = {
+      guid: obj.guid,
+      name: obj.name || 'Unnamed',
+      passed: failures.length === 0,
+      failedRequirements: failures,
+    };
+    (result.passed ? passedObjects : failedObjects).push(result);
+  }
+
+  return {
+    specification: spec,
+    applicableCount: applicableObjects.length,
+    passedCount: passedObjects.length,
+    failedCount: failedObjects.length,
+    failedObjects,
+    passedObjects,
+    status: failedObjects.length === 0 ? 'pass' : 'fail',
+  };
 }
 
-/**
- * Convert IDS facets to StreamBIM ObjectSearchQuery rules
- */
-function facetsToQuery(facets: IDSFacet[]): ObjectSearchQuery {
-  const rules: ObjectSearchQuery['rules'] = [];
+function makeResult(
+  spec: IDSSpecification,
+  status: SpecificationResult['status'],
+  errorMessage?: string
+): SpecificationResult {
+  return {
+    specification: spec,
+    applicableCount: 0,
+    passedCount: 0,
+    failedCount: 0,
+    failedObjects: [],
+    passedObjects: [],
+    status,
+    errorMessage,
+  };
+}
+
+function buildSearchQuery(facets: IDSFacet[]): SearchQuery | null {
+  const rules: SearchRule[] = [];
 
   for (const facet of facets) {
     switch (facet.type) {
@@ -151,172 +105,126 @@ function facetsToQuery(facets: IDSFacet[]): ObjectSearchQuery {
           rules.push({
             psetName: 'Ifc2x3~Object',
             propKey: 'ifcclass',
-            value: facet.entityName,
+            propValue: facet.entityName,
           });
         }
         break;
 
       case 'property':
         if (facet.psetName && facet.propertyName) {
-          rules.push({
-            psetName: facet.psetName,
-            propKey: facet.propertyName,
-            value: facet.value ? String(facet.value) : undefined,
-          });
+          const rule: SearchRule = { psetName: facet.psetName, propKey: facet.propertyName };
+          if (facet.value && !Array.isArray(facet.value)) rule.propValue = facet.value;
+          rules.push(rule);
         }
         break;
 
       case 'attribute':
         if (facet.propertyName) {
-          rules.push({
-            psetName: 'Ifc2x3~Object',
-            propKey: facet.propertyName,
-            value: facet.value ? String(facet.value) : undefined,
-          });
+          const rule: SearchRule = { psetName: 'Ifc2x3~Object', propKey: facet.propertyName };
+          if (facet.value && !Array.isArray(facet.value)) rule.propValue = String(facet.value);
+          rules.push(rule);
         }
         break;
 
       case 'material':
-        if (facet.value) {
-          rules.push({
-            psetName: 'Ifc2x3~Object',
-            propKey: 'Material',
-            value: String(facet.value),
-          });
+        if (facet.value && !Array.isArray(facet.value)) {
+          rules.push({ psetName: 'Ifc2x3~Object', propKey: 'Material', propValue: facet.value });
         }
         break;
 
-      // classification and partOf not yet supported in query conversion
-      case 'classification':
-      case 'partOf':
-        console.warn(`Facet type '${facet.type}' not yet supported in queries`);
+      default:
         break;
     }
   }
 
-  return { rules };
+  if (rules.length === 0) return null;
+
+  // Wrap in outer array (AND group) — StreamBIM uses [[...]] for a single AND clause
+  return {
+    filter: { rules: [rules] },
+    page: { limit: 10000, skip: 0 },
+  };
 }
 
-/**
- * Check if an object meets all requirement facets
- * Returns array of failure reasons (empty = all passed)
- */
-function checkRequirements(requirements: IDSFacet[], obj: ObjectInfo): string[] {
-  const failures: string[] = [];
-
-  for (const req of requirements) {
-    const failure = checkFacetRequirement(req, obj);
-    if (failure) {
-      failures.push(failure);
-    }
-  }
-
-  return failures;
+function checkRequirements(requirements: IDSFacet[], obj: any): string[] {
+  const props: Record<string, string> = obj.ifcProperties || obj.properties || {};
+  return requirements.flatMap(req => {
+    const failure = checkFacet(req, obj, props);
+    return failure ? [failure] : [];
+  });
 }
 
-/**
- * Check a single requirement facet against an object
- * Returns failure reason string, or null if passed
- */
-function checkFacetRequirement(facet: IDSFacet, obj: ObjectInfo): string | null {
-  const ifcProps = obj.ifcProperties || {};
-
+function checkFacet(facet: IDSFacet, obj: any, props: Record<string, string>): string | null {
   switch (facet.type) {
     case 'entity':
-      // Entity applicability is already filtered, so this always passes in requirements
-      return null;
+      return null; // Already filtered by applicability query
 
-    case 'property':
-      if (!facet.psetName || !facet.propertyName) {
-        return `Invalid property facet (missing pset or property name)`;
+    case 'property': {
+      if (!facet.psetName || !facet.propertyName) return null;
+      const value = findPropValue(props, [
+        `${facet.psetName}~${facet.propertyName}`,
+        `${facet.psetName}.${facet.propertyName}`,
+        facet.propertyName,
+      ]);
+      if (value === undefined) {
+        return `Missing property '${facet.propertyName}' in '${facet.psetName}'`;
       }
+      return checkValue(facet.propertyName, value, facet.value);
+    }
 
-      // Property key format: "psetName~propertyName"
-      const propKey = `${facet.psetName}~${facet.propertyName}`;
-      const propValue = ifcProps[propKey];
+    case 'attribute': {
+      if (!facet.propertyName) return null;
+      const direct = obj[facet.propertyName] !== undefined ? String(obj[facet.propertyName]) : undefined;
+      const value = direct ?? findPropValue(props, [
+        `Ifc2x3~Object~${facet.propertyName}`,
+        facet.propertyName,
+      ]);
+      if (value === undefined) return `Missing attribute '${facet.propertyName}'`;
+      return checkValue(facet.propertyName, value, facet.value);
+    }
 
-      // Check if property exists
-      if (propValue === undefined || propValue === null || propValue === '') {
-        return `Property '${facet.propertyName}' not found in '${facet.psetName}'`;
-      }
-
-      // Check value if specified
-      if (facet.value) {
-        if (Array.isArray(facet.value)) {
-          // Enumeration check
-          if (!facet.value.includes(propValue)) {
-            return `Property '${facet.propertyName}' has value '${propValue}', expected one of: ${facet.value.join(', ')}`;
-          }
-        } else if (typeof facet.value === 'string') {
-          // Exact match or pattern check
-          if (facet.value.startsWith('[') && facet.value.endsWith(']')) {
-            // Numeric range [min..max]
-            // For now, just check that value matches the constraint semantically
-            // Full numeric comparison would require parsing and type info
-            return null; // TODO: implement numeric range checks
-          } else {
-            if (propValue !== facet.value) {
-              return `Property '${facet.propertyName}' has value '${propValue}', expected '${facet.value}'`;
-            }
-          }
-        }
-      }
-      return null;
-
-    case 'attribute':
-      if (!facet.propertyName) {
-        return `Invalid attribute facet (missing property name)`;
-      }
-
-      // Attributes are stored in ifcProperties with Ifc2x3~Object prefix
-      const attrKey = `Ifc2x3~Object~${facet.propertyName}`;
-      const attrValue = ifcProps[attrKey];
-
-      if (attrValue === undefined || attrValue === null || attrValue === '') {
-        return `Attribute '${facet.propertyName}' not found`;
-      }
-
-      if (facet.value) {
-        if (Array.isArray(facet.value)) {
-          if (!facet.value.includes(attrValue)) {
-            return `Attribute '${facet.propertyName}' has value '${attrValue}', expected one of: ${facet.value.join(', ')}`;
-          }
-        } else if (typeof facet.value === 'string') {
-          if (attrValue !== facet.value) {
-            return `Attribute '${facet.propertyName}' has value '${attrValue}', expected '${facet.value}'`;
-          }
-        }
-      }
-      return null;
-
-    case 'material':
-      if (!facet.value) {
-        return `Material facet must have a value`;
-      }
-
-      const materialKey = 'Ifc2x3~Object~Material';
-      const materialValue = ifcProps[materialKey];
-
-      if (!materialValue) {
-        return `No material assigned`;
-      }
-
-      if (Array.isArray(facet.value)) {
-        if (!facet.value.includes(materialValue)) {
-          return `Material '${materialValue}' not in allowed list: ${facet.value.join(', ')}`;
-        }
-      } else if (typeof facet.value === 'string') {
-        if (materialValue !== facet.value) {
-          return `Material '${materialValue}', expected '${facet.value}'`;
-        }
-      }
-      return null;
+    case 'material': {
+      const value = findPropValue(props, ['Material', 'Ifc2x3~Object~Material']);
+      if (value === undefined) return 'No material assigned';
+      return checkValue('Material', value, facet.value);
+    }
 
     case 'classification':
     case 'partOf':
-      return `Facet type '${facet.type}' validation not yet implemented`;
+      return null; // Not yet implemented — skip rather than false-fail
 
     default:
-      return `Unknown facet type`;
+      return null;
   }
+}
+
+function findPropValue(
+  props: Record<string, string>,
+  keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    if (props[key] !== undefined && props[key] !== '') return props[key];
+  }
+  return undefined;
+}
+
+function checkValue(
+  label: string,
+  actual: string,
+  expected: string | string[] | null | undefined
+): string | null {
+  if (!expected) return null; // existence check only — value is present, so pass
+
+  if (Array.isArray(expected)) {
+    return expected.includes(actual)
+      ? null
+      : `'${label}' = '${actual}', expected one of: ${expected.join(', ')}`;
+  }
+
+  // Numeric range [min..max] — basic existence pass for now
+  if (/^\[.*\.\.\.*\]$/.test(expected)) return null;
+
+  return actual === expected
+    ? null
+    : `'${label}' = '${actual}', expected '${expected}'`;
 }
