@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -39,6 +39,11 @@ jobs:
       - name: Build
         working-directory: tools/ifc-checker
         run: npm run build
+
+      - name: Delete old artifacts
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          name: github-pages
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
