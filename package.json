@@ -1,0 +1,21 @@
+{
+  "name": "tikab-tools",
+  "version": "0.1.0",
+  "description": "A collection of reusable tools and utilities for Tikab projects",
+  "private": true,
+  "workspaces": [
+    "tools/*",
+    "shared/*"
+  ],
+  "scripts": {
+    "dev": "echo 'Run specific widget dev script'",
+    "build": "echo 'Build all widgets'"
+  },
+  "keywords": [
+    "streambim",
+    "widget",
+    "tikab"
+  ],
+  "author": "Tikab Strukturmekanik AB",
+  "license": "Proprietary"
+}

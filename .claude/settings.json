@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Read(//c/Users/oliver.nicholls/OneDrive - Tikab Strukturmekanik AB/Dokument/Tikab/Entwicklung/0002_StreamBIM_Widget/**)",
+      "Bash(rm -rf node_modules package-lock.json)",
+      "Bash(npm install:*)",
+      "Bash(timeout 5 npm run dev)",
+      "Bash(npm run:*)",
+      "Bash(gh run:*)",
+      "WebFetch(domain:olivernicholls.github.io)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Entwicklung\\0002_StreamBIM_Widget\\tools\\ifc-checker",
+      "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Entwicklung\\0002_StreamBIM_Widget",
+      "c:\\Users\\oliver.nicholls\\.claude\\memory"
+    ]
+  }
+}
