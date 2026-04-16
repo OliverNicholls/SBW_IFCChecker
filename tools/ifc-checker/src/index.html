@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IFC Checker</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        background-color: #f5f5f5;
+        color: #333;
+      }
+
+      .widget-container {
+        background: white;
+        padding: 20px;
+        min-height: 100vh;
+        border-left: 4px solid #2196f3;
+      }
+
+      h1 {
+        font-size: 24px;
+        margin-bottom: 20px;
+        color: #2196f3;
+      }
+
+      h2 {
+        font-size: 16px;
+        margin-bottom: 12px;
+        color: #555;
+        font-weight: 600;
+      }
+
+      h4 {
+        font-size: 13px;
+        margin-bottom: 8px;
+        color: #666;
+        font-weight: 600;
+      }
+
+      .section {
+        margin-bottom: 24px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e0e0e0;
+      }
+
+      .section:last-child {
+        border-bottom: none;
+      }
+
+      .input-group {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      label {
+        font-size: 13px;
+        font-weight: 500;
+        color: #666;
+      }
+
+      .input-field {
+        flex: 1;
+        min-width: 200px;
+        padding: 8px 12px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+
+      .input-field:focus {
+        outline: none;
+        border-color: #2196f3;
+        box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+      }
+
+      .btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-width: 100px;
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background-color: #2196f3;
+        color: white;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background-color: #1976d2;
+        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+      }
+
+      .btn-success {
+        background-color: #4caf50;
+        color: white;
+      }
+
+      .btn-success:hover:not(:disabled) {
+        background-color: #388e3c;
+        box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+      }
+
+      .btn-secondary {
+        background-color: #f44336;
+        color: white;
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background-color: #d32f2f;
+        box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
+      }
+
+      .button-group {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      /* Specifications */
+      .specs-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .spec-item {
+        padding: 12px;
+        background-color: #f9f9f9;
+        border: 1px solid #e8e8e8;
+        border-radius: 4px;
+      }
+
+      .spec-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+
+      .spec-checkbox input[type='checkbox'] {
+        cursor: pointer;
+      }
+
+      .spec-name {
+        font-weight: 500;
+        color: #333;
+        flex: 1;
+      }
+
+      .spec-count {
+        font-size: 12px;
+        color: #999;
+        margin-left: auto;
+      }
+
+      .spec-description {
+        font-size: 12px;
+        color: #666;
+        margin-top: 6px;
+        margin-left: 28px;
+      }
+
+      /* Results */
+      .results-container {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        max-height: 600px;
+        overflow-y: auto;
+      }
+
+      .result-card {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+
+      .result-card.status-pass {
+        border-left: 4px solid #4caf50;
+        background-color: #f1f8f5;
+      }
+
+      .result-card.status-fail {
+        border-left: 4px solid #f44336;
+        background-color: #fef5f5;
+      }
+
+      .result-card.status-error {
+        border-left: 4px solid #ff9800;
+        background-color: #fff8f0;
+      }
+
+      .result-header {
+        padding: 12px;
+        background-color: rgba(0, 0, 0, 0.02);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        user-select: none;
+      }
+
+      .result-header:hover {
+        background-color: rgba(0, 0, 0, 0.04);
+      }
+
+      .result-status {
+        min-width: 20px;
+        text-align: center;
+        font-weight: 700;
+      }
+
+      .result-card.status-pass .result-status {
+        color: #4caf50;
+      }
+
+      .result-card.status-fail .result-status {
+        color: #f44336;
+      }
+
+      .result-card.status-error .result-status {
+        color: #ff9800;
+      }
+
+      .result-name {
+        flex: 1;
+        color: #333;
+      }
+
+      .result-counts {
+        font-size: 12px;
+        color: #999;
+      }
+
+      .result-body {
+        padding: 12px;
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+      }
+
+      .result-body[hidden] {
+        display: none;
+      }
+
+      .error-message {
+        color: #f44336;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+
+      .failed-objects {
+        margin-top: 8px;
+      }
+
+      .failed-objects ul {
+        list-style: none;
+        margin-top: 6px;
+      }
+
+      .failed-object {
+        padding: 6px 0;
+        font-size: 12px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      }
+
+      .failed-object:last-child {
+        border-bottom: none;
+      }
+
+      .guid {
+        display: inline-block;
+        background-color: #f0f0f0;
+        padding: 2px 6px;
+        border-radius: 2px;
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        cursor: pointer;
+        color: #2196f3;
+        margin-right: 6px;
+      }
+
+      .guid:hover {
+        background-color: #2196f3;
+        color: white;
+      }
+
+      .name {
+        color: #333;
+        font-weight: 500;
+      }
+
+      .failure-reasons {
+        margin-top: 4px;
+        margin-left: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .reason {
+        display: block;
+        color: #d32f2f;
+        font-size: 11px;
+        margin-left: 16px;
+        line-height: 1.3;
+      }
+
+      .empty-state {
+        padding: 20px;
+        text-align: center;
+        color: #999;
+        font-size: 13px;
+        background-color: #f9f9f9;
+        border-radius: 4px;
+      }
+
+      /* Status */
+      #status {
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        min-height: 20px;
+        border-left: 4px solid transparent;
+      }
+
+      #status:empty {
+        display: none;
+      }
+
+      .status-info {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        border-left-color: #2196f3;
+      }
+
+      .status-success {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        border-left-color: #4caf50;
+      }
+
+      .status-error {
+        background-color: #ffebee;
+        color: #c62828;
+        border-left-color: #f44336;
+      }
+
+      .status-warn {
+        background-color: #fff3e0;
+        color: #e65100;
+        border-left-color: #ff9800;
+      }
+
+      /* Responsive */
+      @media (max-width: 600px) {
+        .widget-container {
+          padding: 16px;
+        }
+
+        .input-group {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .input-field {
+          min-width: 100%;
+        }
+
+        .button-group {
+          flex-direction: column;
+        }
+
+        .btn {
+          width: 100%;
+        }
+
+        .result-counts {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="index.ts"></script>
+  </body>
+</html>
