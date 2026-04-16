@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 package-lock.json
+!package-lock.json
+!tools/ifc-checker/package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
