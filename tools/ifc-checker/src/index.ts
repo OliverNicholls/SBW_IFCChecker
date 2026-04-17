@@ -10,6 +10,8 @@ let activeTab: 'setup' | 'results' = 'setup';
 let running = false;
 let scope: 'all' | 'selected' = 'all';
 let selectedGuids = new Set<string>();
+let selectionMode = false;
+let selectionSource: 'manual' | 'streambim' = 'manual';
 let idsList: Array<{ id: string; name: string }> = [];
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
@@ -29,7 +31,7 @@ async function boot() {
 }
 
 function onPick(data: any) {
-  if (scope !== 'selected') return;
+  if (!selectionMode) return;
   const guid: string | undefined = data?.guid;
   if (!guid) return;
 
@@ -39,9 +41,9 @@ function onPick(data: any) {
     selectedGuids.add(guid);
   }
 
+  selectionSource = 'manual';
   log(`${selectedGuids.size} element(s) selected`, 'info');
-  const counter = document.getElementById('sel-count');
-  if (counter) counter.textContent = `${selectedGuids.size} selected`;
+  renderSetupSection();
 }
 
 // ─── IDS Loading ──────────────────────────────────────────────────────────────
@@ -191,24 +193,25 @@ async function gotoObject(guid: string) {
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 function exportCSV() {
-  const rows = ['Specification,Status,Applicable,Passed,Failed,GUID,Name,Failure Reasons'];
+  const scopeLabel = scope === 'selected' ? 'My Selection' : 'All Objects';
+  const rows = ['Specification,Status,Applicable,Passed,Failed,Scope,GUID,Name,Failure Reasons'];
 
   for (const r of results.values()) {
     const spec = `"${r.specification.name.replace(/"/g, '""')}"`;
 
     if (r.failedObjects.length === 0 && r.passedObjects.length === 0) {
-      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},,,`);
+      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},${scopeLabel},,,`);
     }
 
     for (const obj of r.failedObjects) {
       const name    = `"${obj.name.replace(/"/g, '""')}"`;
       const reasons = `"${obj.failedRequirements.join('; ').replace(/"/g, '""')}"`;
-      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},${obj.guid},${name},${reasons}`);
+      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},${scopeLabel},${obj.guid},${name},${reasons}`);
     }
 
     for (const obj of r.passedObjects) {
       const name = `"${obj.name.replace(/"/g, '""')}"`;
-      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},${obj.guid},${name},`);
+      rows.push(`${spec},${r.status},${r.applicableCount},${r.passedCount},${r.failedCount},${scopeLabel},${obj.guid},${name},`);
     }
   }
 
@@ -276,11 +279,27 @@ function setupTabHTML(): string {
       `).join('')
     : '';
 
-  const selBadge = scope === 'selected'
-    ? `<span class="badge" id="sel-count">${selectedGuids.size} selected</span>`
-    : '';
+  const selectionModeChecked = selectionMode ? 'checked' : '';
+  const selectionUI = `
+    <section>
+      <h2>Object Selection</h2>
+      <label class="selection-mode-toggle">
+        <input type="checkbox" id="selection-mode-toggle" ${selectionModeChecked} />
+        <span class="toggle-label">Click 3D objects to select</span>
+      </label>
+      ${selectionMode ? `<p class="selection-help">Click objects in the 3D view to add them to your selection</p>` : ''}
+      ${selectedGuids.size > 0 ? `
+        <div class="selection-info">
+          <span>${selectedGuids.size} object(s) selected</span>
+          <button id="clear-manual-sel" class="btn-text">Clear</button>
+        </div>
+      ` : ''}
+    </section>
+  `;
 
   return `
+    ${selectionUI}
+
     <section>
       <h2>IDS Source</h2>
       ${idsList.length > 0 ? `
@@ -309,11 +328,12 @@ function setupTabHTML(): string {
             <input type="radio" name="scope" value="all" ${scope === 'all' ? 'checked' : ''} />
             All objects in model
           </label>
-          <label class="scope-option">
-            <input type="radio" name="scope" value="selected" ${scope === 'selected' ? 'checked' : ''} />
-            Selected objects only ${selBadge}
-          </label>
-          ${scope === 'selected' ? `<button id="clear-sel" class="btn-text">Clear selection</button>` : ''}
+          ${selectedGuids.size > 0 ? `
+            <label class="scope-option">
+              <input type="radio" name="scope" value="selected" ${scope === 'selected' ? 'checked' : ''} />
+              My Selection <span class="badge">${selectedGuids.size} selected</span>
+            </label>
+          ` : ''}
         </div>
       </section>
 
@@ -430,19 +450,29 @@ function attachEvents() {
     if (file) loadIDSFromFile(file);
   });
 
+  // Selection mode toggle
+  document.getElementById('selection-mode-toggle')?.addEventListener('change', (e) => {
+    selectionMode = (e.target as HTMLInputElement).checked;
+    if (!selectionMode) {
+      api?.deHighlightAllObjects?.().catch(() => {});
+    }
+    renderSetupSection();
+  });
+
+  // Clear manual selection
+  document.getElementById('clear-manual-sel')?.addEventListener('click', () => {
+    selectedGuids.clear();
+    scope = 'all';
+    selectionMode = false;
+    renderSetupSection();
+  });
+
   // Scope radios
   document.querySelectorAll<HTMLInputElement>('input[name="scope"]').forEach(radio => {
     radio.addEventListener('change', () => {
       scope = radio.value as 'all' | 'selected';
-      if (scope === 'all') selectedGuids.clear();
       renderSetupSection();
     });
-  });
-
-  // Clear selection
-  document.getElementById('clear-sel')?.addEventListener('click', () => {
-    selectedGuids.clear();
-    renderSetupSection();
   });
 
   // Run checks

@@ -6,35 +6,36 @@ This monorepo contains reusable tools that integrate with StreamBIM projects to 
 
 ## Widgets
 
-### 1. Group Selector / IDS Validator (`tools/group-selector/`)
+### 1. IFC Checker (`tools/ifc-checker/`)
 
-Validate IFC objects against IDS (Information Delivery Specification) files and select multiple elements for batch validation.
+Validate IFC objects against IDS (Information Delivery Specification) files with flexible object selection and batch validation.
 
-**Use Case:** Enforce data quality standards — check that objects comply with IDS specifications. Select individual elements or validate all visible elements at once.
+**Use Case:** Enforce data quality standards — check that objects comply with IDS specifications. Select objects manually by clicking in the 3D view, or validate all visible elements at once.
 
 **Key Features:**
-- Load IDS specification files from StreamBIM documents
-- Click individual elements to add them to a selection
-- Validate multiple selected elements with a single IDS file
-- "Validate All Visible Elements" button for batch processing
+- Load IDS specification files from StreamBIM documents or local upload
+- Click objects in the 3D view to add them to your selection
+- Validate all objects or just your manual selection
 - Real-time validation results with pass/fail status
 - Selection summary showing total elements and pass rate
-- Color-coded results (green for passed, red for failed)
+- Color-coded 3D visualization (green for passed, red for failed)
+- CSV export with validation results and selection source
 
-[📖 Group Selector / IDS Validator README](tools/group-selector/README.md)
+[📖 IFC Checker README](tools/ifc-checker/README.md)
 
 ## Project Structure
 
 ```
 tools/
-├── group-selector/       # IDS-based element validation
+├── ifc-checker/          # IDS-based IFC object validation & selection
 │   ├── src/
 │   │   ├── index.ts
-│   │   └── index.html
+│   │   ├── index.html
+│   │   ├── checker.ts
+│   │   └── ids-parser.ts
 │   ├── package.json
 │   ├── webpack.config.js
 │   └── README.md
-├── ifc-checker/          # (future - IDS-based IFC model validation)
 └── (future tools)
 shared/                   # Shared utilities & components (future)
 docs/                     # Documentation (future)
