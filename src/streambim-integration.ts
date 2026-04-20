@@ -1,5 +1,3 @@
-import * as StreamBIM from 'streambim-widget-api';
-
 export interface StreamBIMObject {
   guid: string;
   name?: string;
@@ -9,11 +7,14 @@ export interface StreamBIMObject {
 export class StreamBIMIntegration {
   private api: any = null;
   private highlightedGuids: Set<string> = new Set();
+  private selectedGuids: Set<string> = new Set();
   private onObjectPicked: ((guid: string) => void) | null = null;
+  private onSelectionChanged: ((guids: string[]) => void) | null = null;
 
   async initialize(): Promise<boolean> {
     try {
-      this.api = await StreamBIM.createStreamBIMAPI();
+      const StreamBIM = (window as any).StreamBIM || {};
+      this.api = await StreamBIM.createStreamBIMAPI?.();
 
       if (!this.api) {
         console.warn('StreamBIM API not available - widget is not embedded in StreamBIM');
@@ -36,8 +37,14 @@ export class StreamBIMIntegration {
     if (this.api.pickedObject) {
       this.api.pickedObject = (data: any) => {
         const guid = data?.guid || data?.id;
-        if (guid && this.onObjectPicked) {
-          this.onObjectPicked(guid);
+        if (guid) {
+          if (this.selectedGuids.has(guid)) {
+            this.selectedGuids.delete(guid);
+          } else {
+            this.selectedGuids.add(guid);
+          }
+          this.onObjectPicked?.(guid);
+          this.onSelectionChanged?.(Array.from(this.selectedGuids));
         }
       };
     }
@@ -65,6 +72,19 @@ export class StreamBIMIntegration {
 
   setOnObjectPicked(callback: (guid: string) => void): void {
     this.onObjectPicked = callback;
+  }
+
+  setOnSelectionChanged(callback: (guids: string[]) => void): void {
+    this.onSelectionChanged = callback;
+  }
+
+  getSelectedGuids(): string[] {
+    return Array.from(this.selectedGuids);
+  }
+
+  clearSelection(): void {
+    this.selectedGuids.clear();
+    this.onSelectionChanged?.(Array.from(this.selectedGuids));
   }
 
   isAvailable(): boolean {

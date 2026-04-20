@@ -38,6 +38,41 @@ export class IDSValidator {
     }
   }
 
+  async validateForObjects(
+    ifcFile: File,
+    idsFile: File,
+    filterGuids: string[]
+  ): Promise<ValidationResult> {
+    const result = await this.validate(ifcFile, idsFile);
+
+    if (filterGuids.length === 0) return result;
+
+    const filterSet = new Set(filterGuids);
+    const filteredFailures = result.failures.filter(issue => issue.objectGuid && filterSet.has(issue.objectGuid));
+    const filteredWarnings = result.warnings.filter(issue => issue.objectGuid && filterSet.has(issue.objectGuid));
+
+    const affectedObjects = new Set<string>();
+    filteredFailures.forEach(issue => {
+      if (issue.objectGuid) affectedObjects.add(issue.objectGuid);
+    });
+    filteredWarnings.forEach(issue => {
+      if (issue.objectGuid) affectedObjects.add(issue.objectGuid);
+    });
+
+    return {
+      pass: filteredFailures.length === 0,
+      totalChecks: result.totalChecks,
+      failures: filteredFailures,
+      warnings: filteredWarnings,
+      summary: {
+        validSpecifications: result.summary.validSpecifications,
+        applicableRules: result.summary.applicableRules,
+        failedRules: filteredFailures.length,
+        affectedObjects: Array.from(affectedObjects)
+      }
+    };
+  }
+
   private readFile(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

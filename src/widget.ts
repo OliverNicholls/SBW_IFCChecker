@@ -21,6 +21,9 @@ export class IDSCheckWidget {
       this.streamBIM.setOnObjectPicked((guid: string) => {
         this.onStreamBIMObjectPicked(guid);
       });
+      this.streamBIM.setOnSelectionChanged((guids: string[]) => {
+        this.updateSelectionUI(guids);
+      });
     }
   }
 
@@ -39,6 +42,29 @@ export class IDSCheckWidget {
           issueElements[0]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }
+    }
+  }
+
+  private updateSelectionUI(guids: string[]): void {
+    const statusDiv = document.getElementById('selection-status');
+    const clearBtn = document.getElementById('clear-selection-btn') as HTMLButtonElement;
+    const validateSelectedBtn = document.getElementById('validate-selected-btn') as HTMLButtonElement;
+    const idsInput = document.getElementById('ids-input') as HTMLInputElement;
+
+    if (statusDiv) {
+      if (guids.length === 0) {
+        statusDiv.textContent = 'No elements selected';
+      } else {
+        statusDiv.textContent = `${guids.length} element${guids.length === 1 ? '' : 's'} selected`;
+      }
+    }
+
+    if (clearBtn) {
+      clearBtn.disabled = guids.length === 0;
+    }
+
+    if (validateSelectedBtn) {
+      validateSelectedBtn.disabled = guids.length === 0 || !idsInput.files?.[0];
     }
   }
 
@@ -68,7 +94,19 @@ export class IDSCheckWidget {
               >
               <label for="ids-input" class="file-label">IDS Specification</label>
             </div>
-            <button id="validate-btn" class="btn-validate">Validate</button>
+            <div class="button-group">
+              <button id="validate-btn" class="btn-validate">Validate All</button>
+            </div>
+            <div class="selection-section">
+              <h3>Selected Elements</h3>
+              <div id="selection-status">No elements selected</div>
+              <div class="selection-actions">
+                <button id="clear-selection-btn" class="btn-secondary" disabled>Clear Selection</button>
+                <button id="validate-selected-btn" class="btn-validate-selected" disabled>
+                  Run Check on Selected
+                </button>
+              </div>
+            </div>
           </div>
           <div class="results-section">
             <h2>Validation Results</h2>
@@ -109,17 +147,79 @@ export class IDSCheckWidget {
           color: #666;
           margin-top: 4px;
         }
-        .btn-validate {
+        .button-group {
+          display: flex;
+          gap: 8px;
           margin-top: 16px;
+        }
+        .btn-validate {
           padding: 8px 16px;
           background: #0066cc;
           color: white;
           border: none;
           border-radius: 4px;
           cursor: pointer;
+          flex: 1;
         }
         .btn-validate:hover {
           background: #0052a3;
+        }
+        .selection-section {
+          margin-top: 24px;
+          padding-top: 16px;
+          border-top: 1px solid #e0e0e0;
+        }
+        .selection-section h3 {
+          font-size: 14px;
+          margin: 0 0 8px 0;
+          color: #333;
+        }
+        #selection-status {
+          padding: 10px;
+          background: #f5f5f5;
+          border-radius: 4px;
+          font-size: 13px;
+          margin-bottom: 12px;
+          color: #666;
+        }
+        .selection-actions {
+          display: flex;
+          gap: 8px;
+          flex-direction: column;
+        }
+        .btn-secondary {
+          padding: 8px 12px;
+          background: #999;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 13px;
+        }
+        .btn-secondary:hover:not(:disabled) {
+          background: #777;
+        }
+        .btn-secondary:disabled {
+          background: #ccc;
+          cursor: not-allowed;
+          opacity: 0.6;
+        }
+        .btn-validate-selected {
+          padding: 8px 12px;
+          background: #00aa33;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 13px;
+        }
+        .btn-validate-selected:hover:not(:disabled) {
+          background: #008822;
+        }
+        .btn-validate-selected:disabled {
+          background: #ccc;
+          cursor: not-allowed;
+          opacity: 0.6;
         }
         .results-container {
           min-height: 100px;
@@ -207,10 +307,19 @@ export class IDSCheckWidget {
 
   private setupEventListeners(): void {
     const validateBtn = document.getElementById('validate-btn');
+    const validateSelectedBtn = document.getElementById('validate-selected-btn');
+    const clearSelectionBtn = document.getElementById('clear-selection-btn');
     const ifcInput = document.getElementById('ifc-input') as HTMLInputElement;
     const idsInput = document.getElementById('ids-input') as HTMLInputElement;
 
     validateBtn?.addEventListener('click', () => this.handleValidation(ifcInput, idsInput));
+    validateSelectedBtn?.addEventListener('click', () => this.handleValidationForSelected(ifcInput, idsInput));
+    clearSelectionBtn?.addEventListener('click', () => this.streamBIM.clearSelection());
+
+    idsInput?.addEventListener('change', () => {
+      const selectedGuids = this.streamBIM.getSelectedGuids();
+      this.updateSelectionUI(selectedGuids);
+    });
   }
 
   private async handleValidation(ifcInput: HTMLInputElement, idsInput: HTMLInputElement): Promise<void> {
@@ -226,7 +335,7 @@ export class IDSCheckWidget {
       resultsDiv.innerHTML = '<div class="result-item">Validating...</div>';
       const results = await this.validator.validate(ifcInput.files[0], idsInput.files[0]);
       this.lastValidationResult = results;
-      this.displayResults(results, resultsDiv);
+      this.displayResults(results, resultsDiv, false);
 
       // Highlight affected objects in StreamBIM if available
       if (this.streamBIM.isAvailable() && results.summary.affectedObjects.length > 0) {
@@ -237,14 +346,45 @@ export class IDSCheckWidget {
     }
   }
 
-  private displayResults(results: any, container: HTMLElement): void {
+  private async handleValidationForSelected(ifcInput: HTMLInputElement, idsInput: HTMLInputElement): Promise<void> {
+    const resultsDiv = document.getElementById('results');
+    if (!resultsDiv) return;
+
+    if (!ifcInput.files?.[0] || !idsInput.files?.[0]) {
+      resultsDiv.innerHTML = '<div class="result-item error">Please upload both IFC and IDS files</div>';
+      return;
+    }
+
+    const selectedGuids = this.streamBIM.getSelectedGuids();
+    if (selectedGuids.length === 0) {
+      resultsDiv.innerHTML = '<div class="result-item error">No elements selected</div>';
+      return;
+    }
+
+    try {
+      resultsDiv.innerHTML = '<div class="result-item">Validating selected elements...</div>';
+      const results = await this.validator.validateForObjects(ifcInput.files[0], idsInput.files[0], selectedGuids);
+      this.lastValidationResult = results;
+      this.displayResults(results, resultsDiv, true, selectedGuids.length);
+
+      // Highlight selected objects in StreamBIM
+      if (this.streamBIM.isAvailable()) {
+        await this.streamBIM.highlightObjects(selectedGuids);
+      }
+    } catch (error) {
+      resultsDiv.innerHTML = `<div class="result-item error">Error: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
+    }
+  }
+
+  private displayResults(results: any, container: HTMLElement, isFiltered: boolean = false, selectedCount?: number): void {
     const statusClass = results.pass ? 'success' : 'error';
     const statusText = results.pass ? '✓ PASSED' : '✗ FAILED';
     const streamBIMAvailable = this.streamBIM.isAvailable();
+    const filterNote = isFiltered ? ` (filtered to ${selectedCount} selected element${selectedCount === 1 ? '' : 's'})` : '';
 
     const summaryHtml = `
       <div class="result-summary result-item ${statusClass}">
-        <div class="status-line"><strong>Status:</strong> ${statusText}</div>
+        <div class="status-line"><strong>Status:</strong> ${statusText}${filterNote}</div>
         <div class="stats-grid">
           <div>Total Rules: ${results.totalChecks || 0}</div>
           <div>Applicable: ${results.summary?.applicableRules || 0}</div>
