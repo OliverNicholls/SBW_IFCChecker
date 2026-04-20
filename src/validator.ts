@@ -1,8 +1,13 @@
 export interface ValidationResult {
   pass: boolean;
   totalChecks: number;
-  failures: Array<{ message: string }>;
-  warnings: Array<{ message: string }>;
+  failures: Array<{ message: string; id?: string }>;
+  warnings: Array<{ message: string; id?: string }>;
+  summary: {
+    validSpecifications: number;
+    applicableRules: number;
+    failedRules: number;
+  };
 }
 
 export class IDSValidator {
@@ -11,14 +16,14 @@ export class IDSValidator {
       const ifcContent = await this.readFile(ifcFile);
       const idsContent = await this.readFile(idsFile);
 
-      // Parse IDS XML
-      const idsData = this.parseIDS(idsContent);
+      // Parse IDS XML specification
+      const idsSpec = this.parseIDSSpecification(idsContent);
 
       // Parse IFC content (JSON or IFC format)
-      const ifcData = this.parseIFC(ifcContent, ifcFile.name);
+      const ifcModel = this.parseIFCModel(ifcContent, ifcFile.name);
 
-      // Validate against IDS
-      return this.validateIFCAgainstIDS(ifcData, idsData);
+      // Validate against IDS specification
+      return this.validateIFCAgainstIDS(ifcModel, idsSpec);
     } catch (error) {
       throw new Error(`Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -33,7 +38,7 @@ export class IDSValidator {
     });
   }
 
-  private parseIDS(content: string): any {
+  private parseIDSSpecification(content: string): any {
     try {
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(content, 'text/xml');
@@ -42,109 +47,179 @@ export class IDSValidator {
         throw new Error('Invalid IDS XML format');
       }
 
-      // Extract specification requirements
-      const requirements: any[] = [];
-      const specs = xmlDoc.getElementsByTagName('Specification');
+      const specifications: any[] = [];
+      const specElements = xmlDoc.getElementsByTagName('Specification');
 
-      for (let i = 0; i < specs.length; i++) {
-        const spec = specs[i];
-        const name = spec.getAttribute('name');
-        const ifcVersion = spec.getAttribute('ifcVersion');
+      for (let i = 0; i < specElements.length; i++) {
+        const specElem = specElements[i];
+        const name = specElem.getAttribute('name') || `Specification ${i + 1}`;
+        const ifcVersion = specElem.getAttribute('ifcVersion') || 'IFC4';
+        const description = specElem.getAttribute('description') || '';
 
-        // Extract applicability rules
-        const applicability = spec.getElementsByTagName('Applicability');
-        // Extract requirements
-        const requirementElements = spec.getElementsByTagName('Requirement');
+        const rules: any[] = [];
+        const requirementElements = specElem.getElementsByTagName('Requirement');
 
-        const reqs: any[] = [];
         for (let j = 0; j < requirementElements.length; j++) {
           const req = requirementElements[j];
-          reqs.push({
-            description: req.textContent,
-            severity: req.getAttribute('severity') || 'error'
+          const ruleId = req.getAttribute('id') || `rule_${i}_${j}`;
+          const severity = req.getAttribute('severity') || 'error';
+          const description = req.getAttribute('description') || req.textContent?.trim() || '';
+
+          rules.push({
+            id: ruleId,
+            description,
+            severity,
+            xpath: req.getAttribute('xpath'),
+            applicability: this.parseApplicability(req)
           });
         }
 
-        requirements.push({
+        specifications.push({
+          id: specElem.getAttribute('id') || `spec_${i}`,
           name,
           ifcVersion,
-          requirements: reqs
+          description,
+          rules
         });
       }
 
-      return { requirements };
+      return { specifications };
     } catch (error) {
       throw new Error(`Failed to parse IDS: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private parseIFC(content: string, filename: string): any {
-    if (filename.toLowerCase().endsWith('.json') || filename.toLowerCase().endsWith('.ifcjson')) {
+  private parseApplicability(element: Element): any {
+    const applicability = element.getElementsByTagName('Applicability');
+    if (applicability.length === 0) return null;
+
+    const rules: any[] = [];
+    for (let i = 0; i < applicability[0].children.length; i++) {
+      const child = applicability[0].children[i];
+      rules.push({
+        type: child.tagName,
+        value: child.getAttribute('value') || child.textContent?.trim()
+      });
+    }
+
+    return rules;
+  }
+
+  private parseIFCModel(content: string, filename: string): any {
+    const lowerFilename = filename.toLowerCase();
+
+    if (lowerFilename.endsWith('.json') || lowerFilename.endsWith('.ifcjson')) {
       try {
         return JSON.parse(content);
       } catch (error) {
         throw new Error('Invalid IFC JSON format');
       }
-    } else if (filename.toLowerCase().endsWith('.ifc')) {
-      // For text IFC format, extract basic properties
+    } else if (lowerFilename.endsWith('.ifc')) {
       return this.parseTextIFC(content);
     }
-    throw new Error('Unsupported IFC format');
+
+    throw new Error('Unsupported IFC format. Supported: .ifc, .ifcjson, .json');
   }
 
   private parseTextIFC(content: string): any {
     const lines = content.split('\n');
-    const data: any = {
+    const model: any = {
+      header: {},
       entities: [],
-      properties: {}
+      entityCount: 0,
+      ifcVersion: 'Unknown'
     };
 
-    // Basic IFC text parsing
     let inData = false;
+    let inHeader = false;
+
     for (const line of lines) {
       const trimmed = line.trim();
+
+      if (trimmed === 'HEADER;') {
+        inHeader = true;
+        continue;
+      }
+
+      if (trimmed === 'ENDSEC;' && inHeader) {
+        inHeader = false;
+        continue;
+      }
+
       if (trimmed === 'DATA;') {
         inData = true;
         continue;
       }
-      if (inData && trimmed && trimmed !== 'ENDSEC;') {
-        data.entities.push(trimmed);
+
+      if (trimmed === 'ENDSEC;' && inData) {
+        inData = false;
+        continue;
+      }
+
+      if (inHeader && trimmed.startsWith('FILE_SCHEMA')) {
+        const match = trimmed.match(/FILE_SCHEMA\s*\(\('([^']+)'/);
+        if (match) model.ifcVersion = match[1];
+      }
+
+      if (inData && trimmed && !trimmed.startsWith('/*')) {
+        model.entities.push(trimmed);
+        model.entityCount++;
       }
     }
 
-    return data;
+    return model;
   }
 
-  private validateIFCAgainstIDS(ifcData: any, idsData: any): ValidationResult {
+  private validateIFCAgainstIDS(ifcModel: any, idsSpec: any): ValidationResult {
     const result: ValidationResult = {
       pass: true,
       totalChecks: 0,
       failures: [],
-      warnings: []
+      warnings: [],
+      summary: {
+        validSpecifications: 0,
+        applicableRules: 0,
+        failedRules: 0
+      }
     };
 
-    // Basic validation logic
-    if (!ifcData || Object.keys(ifcData).length === 0) {
+    // Validate IFC model is not empty
+    if (!ifcModel || (ifcModel.entities?.length === 0 && Object.keys(ifcModel).length === 0)) {
       result.pass = false;
-      result.failures.push({ message: 'IFC file is empty or invalid' });
+      result.failures.push({ message: 'IFC model is empty or invalid' });
+      return result;
     }
 
-    if (!idsData || idsData.requirements.length === 0) {
-      result.warnings.push({ message: 'No IDS requirements found' });
+    // Validate IDS specifications exist
+    if (!idsSpec?.specifications || idsSpec.specifications.length === 0) {
+      result.warnings.push({ message: 'No IDS specifications found to validate against' });
+      return result;
     }
 
-    // Validate each IDS requirement
-    for (const spec of idsData.requirements) {
-      result.totalChecks += spec.requirements.length;
+    // Process each specification
+    for (const spec of idsSpec.specifications) {
+      result.summary.validSpecifications++;
+      result.totalChecks += spec.rules.length;
 
-      for (const req of spec.requirements) {
-        // Placeholder validation - in production, this would be more sophisticated
-        if (!this.checkRequirement(ifcData, req)) {
-          result.pass = false;
-          if (req.severity === 'error') {
-            result.failures.push({ message: `Requirement failed: ${req.description}` });
-          } else {
-            result.warnings.push({ message: `Warning: ${req.description}` });
+      for (const rule of spec.rules) {
+        // Check if rule is applicable to this IFC model
+        if (this.isRuleApplicable(ifcModel, spec, rule)) {
+          result.summary.applicableRules++;
+
+          // Validate the rule
+          const ruleValid = this.validateRule(ifcModel, spec, rule);
+
+          if (!ruleValid) {
+            result.pass = false;
+            result.summary.failedRules++;
+
+            const message = `[${spec.name}] ${rule.description || rule.id}`;
+
+            if (rule.severity === 'error') {
+              result.failures.push({ message, id: rule.id });
+            } else if (rule.severity === 'warning') {
+              result.warnings.push({ message, id: rule.id });
+            }
           }
         }
       }
@@ -153,9 +228,70 @@ export class IDSValidator {
     return result;
   }
 
-  private checkRequirement(ifcData: any, requirement: any): boolean {
-    // Placeholder implementation
-    // In a real implementation, this would check actual IFC properties against the requirement
+  private isRuleApplicable(ifcModel: any, spec: any, rule: any): boolean {
+    // If no applicability rules, it always applies
+    if (!rule.applicability || rule.applicability.length === 0) {
+      return true;
+    }
+
+    // Check if model version matches specification
+    if (spec.ifcVersion && ifcModel.ifcVersion) {
+      const modelVersion = ifcModel.ifcVersion.toLowerCase();
+      const specVersion = spec.ifcVersion.toLowerCase();
+      if (!modelVersion.includes(specVersion) && !specVersion.includes(modelVersion)) {
+        return false;
+      }
+    }
+
     return true;
+  }
+
+  private validateRule(ifcModel: any, _spec: any, rule: any): boolean {
+    // Basic validation checks
+    if (ifcModel.entityCount === undefined && !Array.isArray(ifcModel.entities)) {
+      // JSON-based IFC model
+      return this.validateJSONRule(ifcModel, rule);
+    } else {
+      // Text-based IFC model
+      return this.validateTextIFCRule(ifcModel);
+    }
+  }
+
+  private validateJSONRule(ifcModel: any, rule: any): boolean {
+    // Check if required properties exist in model
+    // This is a simplified validation
+    if (rule.xpath) {
+      // XPath-like property checking
+      return this.checkXPathExpression(ifcModel, rule.xpath);
+    }
+
+    // Default: model has content
+    return Object.keys(ifcModel).length > 0;
+  }
+
+  private validateTextIFCRule(ifcModel: any): boolean {
+    // For text IFC, check if entities exist
+    if (ifcModel.entityCount === 0) {
+      return false;
+    }
+
+    // Check for basic IFC structure validity
+    return ifcModel.entities && ifcModel.entities.length > 0;
+  }
+
+  private checkXPathExpression(obj: any, xpath: string): boolean {
+    // Simple XPath-like expression checker
+    const parts = xpath.split('/').filter(p => p);
+
+    let current = obj;
+    for (const part of parts) {
+      if (current && typeof current === 'object') {
+        current = current[part];
+      } else {
+        return false;
+      }
+    }
+
+    return current !== undefined && current !== null;
   }
 }

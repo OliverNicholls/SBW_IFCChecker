@@ -1,16 +1,15 @@
 import { IDSValidator } from './validator';
 
 export class IDSCheckWidget {
-  private container: HTMLElement;
   private validator: IDSValidator;
 
   constructor() {
     this.validator = new IDSValidator();
-    this.container = this.createContainer();
+    this.createContainer();
     this.setupEventListeners();
   }
 
-  private createContainer(): HTMLElement {
+  private createContainer(): void {
     const container = document.getElementById('app') || document.body;
     container.innerHTML = `
       <div class="ids-widget">
@@ -95,25 +94,61 @@ export class IDSCheckWidget {
           background: #f5f5f5;
           border-radius: 4px;
         }
+        .result-summary {
+          margin-bottom: 20px;
+          padding: 16px;
+          background: white;
+          border-radius: 4px;
+        }
+        .status-line {
+          font-size: 18px;
+          font-weight: bold;
+          margin-bottom: 12px;
+        }
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 8px;
+          font-size: 14px;
+          color: #666;
+        }
+        .results-group {
+          margin-top: 16px;
+        }
+        .group-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: #333;
+          margin: 12px 0 8px 0;
+        }
         .result-item {
-          margin: 8px 0;
-          padding: 8px;
+          margin: 6px 0;
+          padding: 10px;
           background: white;
           border-left: 4px solid #ccc;
           border-radius: 2px;
+          font-size: 13px;
+          line-height: 1.4;
         }
         .result-item.success {
           border-left-color: #00aa00;
+          background: #f0f8f0;
         }
         .result-item.warning {
           border-left-color: #ff9800;
+          background: #fff9f0;
         }
         .result-item.error {
           border-left-color: #f44336;
+          background: #fef0f0;
+        }
+        .rule-id {
+          color: #999;
+          font-size: 11px;
+          margin-right: 8px;
         }
       </style>
     `;
-    return container;
   }
 
   private setupEventListeners(): void {
@@ -143,22 +178,45 @@ export class IDSCheckWidget {
   }
 
   private displayResults(results: any, container: HTMLElement): void {
-    const html = `
-      <div class="result-summary">
-        <p>Status: ${results.pass ? 'PASS' : 'FAIL'}</p>
-        <p>Total Checks: ${results.totalChecks || 0}</p>
+    const statusClass = results.pass ? 'success' : 'error';
+    const statusText = results.pass ? '✓ PASSED' : '✗ FAILED';
+
+    const summaryHtml = `
+      <div class="result-summary result-item ${statusClass}">
+        <div class="status-line"><strong>Status:</strong> ${statusText}</div>
+        <div class="stats-grid">
+          <div>Total Rules: ${results.totalChecks || 0}</div>
+          <div>Applicable: ${results.summary?.applicableRules || 0}</div>
+          <div>Failed: ${results.summary?.failedRules || 0}</div>
+          <div>Specifications: ${results.summary?.validSpecifications || 0}</div>
+        </div>
       </div>
-      ${(results.failures || []).map((failure: any) => `
-        <div class="result-item error">
-          <strong>FAIL:</strong> ${failure.message}
-        </div>
-      `).join('')}
-      ${(results.warnings || []).map((warning: any) => `
-        <div class="result-item warning">
-          <strong>WARNING:</strong> ${warning.message}
-        </div>
-      `).join('')}
     `;
-    container.innerHTML = html;
+
+    const failuresHtml = results.failures.length > 0 ? `
+      <div class="results-group">
+        <h3 class="group-title">Failures (${results.failures.length})</h3>
+        ${results.failures.map((failure: any) => `
+          <div class="result-item error">
+            ${failure.id ? `<span class="rule-id">[${failure.id}]</span>` : ''}
+            ${failure.message}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    const warningsHtml = results.warnings.length > 0 ? `
+      <div class="results-group">
+        <h3 class="group-title">Warnings (${results.warnings.length})</h3>
+        ${results.warnings.map((warning: any) => `
+          <div class="result-item warning">
+            ${warning.id ? `<span class="rule-id">[${warning.id}]</span>` : ''}
+            ${warning.message}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    container.innerHTML = summaryHtml + failuresHtml + warningsHtml;
   }
 }
