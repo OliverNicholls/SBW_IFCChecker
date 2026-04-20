@@ -1,3 +1,10 @@
+export interface StreamBIMObjectData {
+  guid: string;
+  name?: string;
+  type?: string;
+  properties: Record<string, any>;
+}
+
 export interface ValidationIssue {
   message: string;
   id?: string;
@@ -71,6 +78,107 @@ export class IDSValidator {
         affectedObjects: Array.from(affectedObjects)
       }
     };
+  }
+
+  async validateStreamBIMObjects(
+    objects: StreamBIMObjectData[],
+    idsFile: File
+  ): Promise<ValidationResult> {
+    try {
+      const idsContent = await this.readFile(idsFile);
+      const idsSpec = this.parseIDSSpecification(idsContent);
+
+      return this.validateStreamBIMObjectsAgainstIDS(objects, idsSpec);
+    } catch (error) {
+      throw new Error(`Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private validateStreamBIMObjectsAgainstIDS(
+    objects: StreamBIMObjectData[],
+    idsSpec: any
+  ): ValidationResult {
+    const affectedObjects = new Set<string>();
+
+    const result: ValidationResult = {
+      pass: true,
+      totalChecks: 0,
+      failures: [],
+      warnings: [],
+      summary: {
+        validSpecifications: 0,
+        applicableRules: 0,
+        failedRules: 0,
+        affectedObjects: []
+      }
+    };
+
+    if (objects.length === 0) {
+      result.warnings.push({ message: 'No objects to validate' });
+      return result;
+    }
+
+    if (!idsSpec?.specifications || idsSpec.specifications.length === 0) {
+      result.warnings.push({ message: 'No IDS specifications found to validate against' });
+      return result;
+    }
+
+    for (const spec of idsSpec.specifications) {
+      result.summary.validSpecifications++;
+      result.totalChecks += spec.rules.length;
+
+      for (const rule of spec.rules) {
+        result.summary.applicableRules++;
+
+        for (const obj of objects) {
+          const ruleValid = this.validateRuleAgainstStreamBIMObject(obj, rule);
+
+          if (!ruleValid) {
+            result.pass = false;
+            result.summary.failedRules++;
+
+            const message = `[${spec.name}] ${rule.description || rule.id}`;
+            const issue: ValidationIssue = {
+              message,
+              id: rule.id,
+              objectGuid: obj.guid,
+              objectName: obj.name,
+              objectType: obj.type
+            };
+
+            if (rule.severity === 'error') {
+              result.failures.push(issue);
+            } else if (rule.severity === 'warning') {
+              result.warnings.push(issue);
+            }
+
+            affectedObjects.add(obj.guid);
+          }
+        }
+      }
+    }
+
+    result.summary.affectedObjects = Array.from(affectedObjects);
+    return result;
+  }
+
+  private validateRuleAgainstStreamBIMObject(obj: StreamBIMObjectData, rule: any): boolean {
+    if (!rule.xpath) {
+      return true;
+    }
+
+    const parts = rule.xpath.split('/').filter((p: string) => p);
+
+    let current: any = obj.properties;
+    for (const part of parts) {
+      if (current && typeof current === 'object') {
+        current = current[part];
+      } else {
+        return false;
+      }
+    }
+
+    return current !== undefined && current !== null;
   }
 
   private readFile(file: File): Promise<string> {

@@ -1,16 +1,35 @@
 declare module 'streambim-widget-api' {
-  export interface PickedObjectData {
-    guid?: string;
-    id?: string;
-    coordinate?: { x: number; y: number; z: number };
+  export interface ConnectCallbacks {
+    pickedObject?: (result: { guid: string; point?: number[] }) => void;
+    spacesChanged?: (guids: string[]) => void;
+    cameraChanged?: (state: any) => void;
+    didExpand?: () => void;
+    didContract?: () => void;
+  }
+
+  export interface ObjectInfo {
+    properties: Record<string, any>;
+    name?: string;
+    type?: string;
+  }
+
+  export interface SearchResult {
+    guid: string;
+    properties: Record<string, any>;
+    name?: string;
+    type?: string;
   }
 
   export interface StreamBIMAPI {
-    highlightedObjects?: string[];
-    pickedObject?: (data: PickedObjectData) => void;
-    spacesChanged?: (guids: string[]) => void;
-    cameraChanged?: (camera: any) => void;
+    connect(callbacks?: ConnectCallbacks): Promise<void>;
+    getObjectInfo(guid: string): Promise<ObjectInfo>;
+    getObjectInfoForSearch(query: any): Promise<SearchResult[]>;
+    findObjects(query: any): Promise<string[]>;
+    highlightObject(guid: string): Promise<void>;
+    deHighlightObject(guid: string): Promise<void>;
+    deHighlightAllObjects(): Promise<void>;
   }
 
-  export function createStreamBIMAPI(): Promise<StreamBIMAPI | null>;
+  declare const StreamBIM: StreamBIMAPI;
+  export default StreamBIM;
 }

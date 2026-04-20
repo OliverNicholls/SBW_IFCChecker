@@ -16,14 +16,22 @@ export class IDSCheckWidget {
 
   private async initializeStreamBIM(): Promise<void> {
     const available = await this.streamBIM.initialize();
+    const statusDiv = document.getElementById('connection-status');
     if (available) {
       console.log('StreamBIM integration ready - object selection enabled');
+      if (statusDiv) {
+        statusDiv.innerHTML = '<span style="color: #00aa00;">✓ Connected to StreamBIM</span>';
+      }
       this.streamBIM.setOnObjectPicked((guid: string) => {
         this.onStreamBIMObjectPicked(guid);
       });
       this.streamBIM.setOnSelectionChanged((guids: string[]) => {
         this.updateSelectionUI(guids);
       });
+    } else {
+      if (statusDiv) {
+        statusDiv.innerHTML = '<span style="color: #ff6600;">✗ Not connected (running outside StreamBIM)</span>';
+      }
     }
   }
 
@@ -64,7 +72,7 @@ export class IDSCheckWidget {
     }
 
     if (validateSelectedBtn) {
-      validateSelectedBtn.disabled = guids.length === 0 || !idsInput.files?.[0];
+      validateSelectedBtn.disabled = guids.length === 0 || !idsInput.files?.[0] || !this.streamBIM.isAvailable();
     }
   }
 
@@ -73,18 +81,10 @@ export class IDSCheckWidget {
     container.innerHTML = `
       <div class="ids-widget">
         <h1>IDS Checker</h1>
+        <div id="connection-status" class="connection-status">Connecting...</div>
         <div class="widget-content">
           <div class="upload-section">
-            <h2>Upload Files</h2>
-            <div class="file-input-group">
-              <input
-                type="file"
-                id="ifc-input"
-                accept=".ifc,.ifcjson,.json"
-                class="file-input"
-              >
-              <label for="ifc-input" class="file-label">IFC Model</label>
-            </div>
+            <h2>Upload IDS Specification</h2>
             <div class="file-input-group">
               <input
                 type="file"
@@ -121,6 +121,14 @@ export class IDSCheckWidget {
           background: #fff;
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .connection-status {
+          padding: 8px 12px;
+          margin-bottom: 16px;
+          background: #f0f2f5;
+          border-radius: 4px;
+          font-size: 13px;
+          text-align: center;
         }
         .widget-content {
           display: grid;
@@ -309,11 +317,10 @@ export class IDSCheckWidget {
     const validateBtn = document.getElementById('validate-btn');
     const validateSelectedBtn = document.getElementById('validate-selected-btn');
     const clearSelectionBtn = document.getElementById('clear-selection-btn');
-    const ifcInput = document.getElementById('ifc-input') as HTMLInputElement;
     const idsInput = document.getElementById('ids-input') as HTMLInputElement;
 
-    validateBtn?.addEventListener('click', () => this.handleValidation(ifcInput, idsInput));
-    validateSelectedBtn?.addEventListener('click', () => this.handleValidationForSelected(ifcInput, idsInput));
+    validateBtn?.addEventListener('click', () => this.handleValidateAll(idsInput));
+    validateSelectedBtn?.addEventListener('click', () => this.handleValidationForSelected(idsInput));
     clearSelectionBtn?.addEventListener('click', () => this.streamBIM.clearSelection());
 
     idsInput?.addEventListener('change', () => {
@@ -322,23 +329,35 @@ export class IDSCheckWidget {
     });
   }
 
-  private async handleValidation(ifcInput: HTMLInputElement, idsInput: HTMLInputElement): Promise<void> {
+  private async handleValidateAll(idsInput: HTMLInputElement): Promise<void> {
     const resultsDiv = document.getElementById('results');
     if (!resultsDiv) return;
 
-    if (!ifcInput.files?.[0] || !idsInput.files?.[0]) {
-      resultsDiv.innerHTML = '<div class="result-item error">Please upload both IFC and IDS files</div>';
+    if (!this.streamBIM.isAvailable()) {
+      resultsDiv.innerHTML = '<div class="result-item error">StreamBIM not connected. This widget must be embedded in StreamBIM.</div>';
+      return;
+    }
+
+    if (!idsInput.files?.[0]) {
+      resultsDiv.innerHTML = '<div class="result-item error">Please upload an IDS specification</div>';
       return;
     }
 
     try {
-      resultsDiv.innerHTML = '<div class="result-item">Validating...</div>';
-      const results = await this.validator.validate(ifcInput.files[0], idsInput.files[0]);
+      resultsDiv.innerHTML = '<div class="result-item">Fetching all objects from StreamBIM and validating...</div>';
+      const objects = await this.streamBIM.getAllObjects();
+
+      if (objects.length === 0) {
+        resultsDiv.innerHTML = '<div class="result-item warning">No objects found in the model</div>';
+        return;
+      }
+
+      const results = await this.validator.validateStreamBIMObjects(objects, idsInput.files[0]);
       this.lastValidationResult = results;
       this.displayResults(results, resultsDiv, false);
 
-      // Highlight affected objects in StreamBIM if available
-      if (this.streamBIM.isAvailable() && results.summary.affectedObjects.length > 0) {
+      // Highlight affected objects in StreamBIM
+      if (results.summary.affectedObjects.length > 0) {
         await this.streamBIM.highlightObjects(results.summary.affectedObjects);
       }
     } catch (error) {
@@ -346,12 +365,17 @@ export class IDSCheckWidget {
     }
   }
 
-  private async handleValidationForSelected(ifcInput: HTMLInputElement, idsInput: HTMLInputElement): Promise<void> {
+  private async handleValidationForSelected(idsInput: HTMLInputElement): Promise<void> {
     const resultsDiv = document.getElementById('results');
     if (!resultsDiv) return;
 
-    if (!ifcInput.files?.[0] || !idsInput.files?.[0]) {
-      resultsDiv.innerHTML = '<div class="result-item error">Please upload both IFC and IDS files</div>';
+    if (!this.streamBIM.isAvailable()) {
+      resultsDiv.innerHTML = '<div class="result-item error">StreamBIM not connected. This widget must be embedded in StreamBIM.</div>';
+      return;
+    }
+
+    if (!idsInput.files?.[0]) {
+      resultsDiv.innerHTML = '<div class="result-item error">Please upload an IDS specification</div>';
       return;
     }
 
@@ -362,15 +386,14 @@ export class IDSCheckWidget {
     }
 
     try {
-      resultsDiv.innerHTML = '<div class="result-item">Validating selected elements...</div>';
-      const results = await this.validator.validateForObjects(ifcInput.files[0], idsInput.files[0], selectedGuids);
+      resultsDiv.innerHTML = '<div class="result-item">Fetching selected objects from StreamBIM and validating...</div>';
+      const objects = await this.streamBIM.getObjectsInfo(selectedGuids);
+      const results = await this.validator.validateStreamBIMObjects(objects, idsInput.files[0]);
       this.lastValidationResult = results;
       this.displayResults(results, resultsDiv, true, selectedGuids.length);
 
       // Highlight selected objects in StreamBIM
-      if (this.streamBIM.isAvailable()) {
-        await this.streamBIM.highlightObjects(selectedGuids);
-      }
+      await this.streamBIM.highlightObjects(selectedGuids);
     } catch (error) {
       resultsDiv.innerHTML = `<div class="result-item error">Error: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
     }
