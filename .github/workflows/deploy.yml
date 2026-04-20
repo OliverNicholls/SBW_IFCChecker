@@ -36,7 +36,6 @@ jobs:
         run: npm ci
 
       - name: Build
-        working-directory: tools/ifc-checker
         run: npm run build
 
       - name: Delete old artifacts
@@ -47,7 +46,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'tools/ifc-checker/dist'
+          path: 'dist'
 
   deploy:
     environment:

@@ -1,19 +1,12 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: '/SBW_IFCChecker/',
   build: {
-    lib: {
-      entry: 'src/main.ts',
-      name: 'StreamBIMIDSChecker',
-      fileName: (format) => `streambim-ids-checker.${format === 'es' ? 'js' : 'umd.js'}`
-    },
+    outDir: 'dist',
+    emptyOutDir: true,
     rollupOptions: {
-      external: ['streambim-widget-api'],
-      output: {
-        globals: {
-          'streambim-widget-api': 'StreamBIMWidget'
-        }
-      }
+      input: 'index.html'
     }
   }
 });
