@@ -14,12 +14,22 @@ export class StreamBIMIntegration {
 
   async initialize(): Promise<boolean> {
     try {
-      const StreamBIM = (window as any).StreamBIM;
+      // Wait for StreamBIM to be available (up to 3 seconds)
+      let StreamBIM = (window as any).StreamBIM;
+      let attempts = 0;
+      while (!StreamBIM && attempts < 30) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        StreamBIM = (window as any).StreamBIM;
+        attempts++;
+      }
+
       if (!StreamBIM) {
         console.warn('StreamBIM not available - widget is not embedded in StreamBIM');
+        console.warn('window.StreamBIM is undefined');
         return false;
       }
 
+      console.log('StreamBIM API found, attempting connection...');
       await StreamBIM.connectToParent(window, {
         pickedObject: (result: any) => {
           const guid = result?.guid || result?.id;
