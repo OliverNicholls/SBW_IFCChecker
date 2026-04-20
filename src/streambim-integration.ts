@@ -20,7 +20,7 @@ export class StreamBIMIntegration {
         return false;
       }
 
-      await StreamBIM.connect({
+      await StreamBIM.connectToParent(window, {
         pickedObject: (result: any) => {
           const guid = result?.guid || result?.id;
           if (guid) {

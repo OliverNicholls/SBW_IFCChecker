@@ -22,6 +22,7 @@ declare module 'streambim-widget-api' {
 
   export interface StreamBIMAPI {
     connect(callbacks?: ConnectCallbacks): Promise<void>;
+    connectToParent(window: Window, callbacks?: ConnectCallbacks): Promise<void>;
     getObjectInfo(guid: string): Promise<ObjectInfo>;
     getObjectInfoForSearch(query: any): Promise<SearchResult[]>;
     findObjects(query: any): Promise<string[]>;
