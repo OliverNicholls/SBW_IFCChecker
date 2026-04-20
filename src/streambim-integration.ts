@@ -14,29 +14,26 @@ export class StreamBIMIntegration {
 
   async initialize(): Promise<boolean> {
     try {
-      // Wait for StreamBIM to be available (up to 3 seconds)
-      let StreamBIM = (window as any).StreamBIM;
-      let attempts = 0;
-      while (!StreamBIM && attempts < 30) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        StreamBIM = (window as any).StreamBIM;
-        attempts++;
-      }
+      console.log('StreamBIM initialization: checking for API...');
 
+      const StreamBIM = (window as any).StreamBIM;
       if (!StreamBIM) {
-        console.warn('StreamBIM not available - widget is not embedded in StreamBIM');
-        console.warn('window.StreamBIM is undefined');
+        console.warn('StreamBIM not available - widget is not embedded in StreamBIM or API not exposed');
         return false;
       }
 
-      console.log('StreamBIM API found, attempting connection...');
-      console.log('StreamBIM object:', StreamBIM);
-      console.log('connectToParent method exists:', typeof StreamBIM.connectToParent);
+      console.log('StreamBIM API found, calling connectToParent...');
+      console.log('connectToParent is:', typeof StreamBIM.connectToParent);
+
+      if (typeof StreamBIM.connectToParent !== 'function') {
+        console.error('StreamBIM.connectToParent is not a function, available methods:', Object.keys(StreamBIM));
+        return false;
+      }
 
       try {
         await StreamBIM.connectToParent(window, {
           pickedObject: (result: any) => {
-            console.log('Object picked:', result);
+            console.log('Object picked in widget:', result);
             const guid = result?.guid || result?.id;
             if (guid) {
               if (this.selectedGuids.has(guid)) {
@@ -51,15 +48,14 @@ export class StreamBIMIntegration {
         });
         this.api = StreamBIM;
         this.connected = true;
-        console.log('StreamBIM API connected successfully');
+        console.log('✓ StreamBIM API connected successfully');
         return true;
       } catch (connectError) {
-        console.error('Failed to connect to StreamBIM parent:', connectError);
-        throw connectError;
+        console.error('❌ Failed to connect to StreamBIM parent:', connectError);
+        return false;
       }
     } catch (error) {
-      console.error('StreamBIM initialization failed:', error);
-      console.warn('StreamBIM not available (running outside StreamBIM):', error);
+      console.error('StreamBIM initialization error:', error);
       return false;
     }
   }
