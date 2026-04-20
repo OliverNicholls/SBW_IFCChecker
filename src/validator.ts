@@ -1,12 +1,21 @@
+export interface ValidationIssue {
+  message: string;
+  id?: string;
+  objectGuid?: string;
+  objectName?: string;
+  objectType?: string;
+}
+
 export interface ValidationResult {
   pass: boolean;
   totalChecks: number;
-  failures: Array<{ message: string; id?: string }>;
-  warnings: Array<{ message: string; id?: string }>;
+  failures: ValidationIssue[];
+  warnings: ValidationIssue[];
   summary: {
     validSpecifications: number;
     applicableRules: number;
     failedRules: number;
+    affectedObjects: string[];
   };
 }
 
@@ -171,6 +180,8 @@ export class IDSValidator {
   }
 
   private validateIFCAgainstIDS(ifcModel: any, idsSpec: any): ValidationResult {
+    const affectedObjects = new Set<string>();
+
     const result: ValidationResult = {
       pass: true,
       totalChecks: 0,
@@ -179,7 +190,8 @@ export class IDSValidator {
       summary: {
         validSpecifications: 0,
         applicableRules: 0,
-        failedRules: 0
+        failedRules: 0,
+        affectedObjects: []
       }
     };
 
@@ -214,18 +226,41 @@ export class IDSValidator {
             result.summary.failedRules++;
 
             const message = `[${spec.name}] ${rule.description || rule.id}`;
+            const issue: ValidationIssue = { message, id: rule.id };
+
+            // Extract GUID if available from the model
+            if (ifcModel.entities && ifcModel.entities.length > 0) {
+              const guid = this.extractGuidFromEntity(ifcModel.entities[0]);
+              if (guid) {
+                issue.objectGuid = guid;
+                affectedObjects.add(guid);
+              }
+            }
 
             if (rule.severity === 'error') {
-              result.failures.push({ message, id: rule.id });
+              result.failures.push(issue);
             } else if (rule.severity === 'warning') {
-              result.warnings.push({ message, id: rule.id });
+              result.warnings.push(issue);
             }
           }
         }
       }
     }
 
+    result.summary.affectedObjects = Array.from(affectedObjects);
     return result;
+  }
+
+  private extractGuidFromEntity(entity: any): string | undefined {
+    if (typeof entity === 'string') {
+      // Try to extract GUID from IFC text format
+      const guidMatch = entity.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      if (guidMatch) return guidMatch[0];
+    } else if (typeof entity === 'object') {
+      // Try to find GUID in JSON object
+      return entity.guid || entity.GlobalId || entity.id;
+    }
+    return undefined;
   }
 
   private isRuleApplicable(ifcModel: any, spec: any, rule: any): boolean {

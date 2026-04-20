@@ -16,7 +16,8 @@
       "Bash(git commit -m 'Initialize StreamBIM IDS Checker widget from scratch *)",
       "Bash(git push *)",
       "Bash(git commit -m 'Fix dependencies and implement working IDS validator *)",
-      "Bash(git commit -m 'Configure for GitHub Pages deployment *)"
+      "Bash(git commit -m 'Configure for GitHub Pages deployment *)",
+      "Bash(git commit -m 'Fix GitHub Actions: remove failing delete-artifact step *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Entwicklung\\0002_StreamBIM_Widget\\tools\\ifc-checker",

@@ -1,12 +1,45 @@
 import { IDSValidator } from './validator';
+import { StreamBIMIntegration } from './streambim-integration';
 
 export class IDSCheckWidget {
   private validator: IDSValidator;
+  private streamBIM: StreamBIMIntegration;
+  private lastValidationResult: any = null;
 
   constructor() {
     this.validator = new IDSValidator();
+    this.streamBIM = new StreamBIMIntegration();
     this.createContainer();
+    this.initializeStreamBIM();
     this.setupEventListeners();
+  }
+
+  private async initializeStreamBIM(): Promise<void> {
+    const available = await this.streamBIM.initialize();
+    if (available) {
+      console.log('StreamBIM integration ready - object selection enabled');
+      this.streamBIM.setOnObjectPicked((guid: string) => {
+        this.onStreamBIMObjectPicked(guid);
+      });
+    }
+  }
+
+  private onStreamBIMObjectPicked(guid: string): void {
+    // Highlight the picked object's validation issues
+    if (this.lastValidationResult) {
+      const allIssues = [...this.lastValidationResult.failures, ...this.lastValidationResult.warnings];
+      const issues = allIssues.filter((issue: any) => issue.objectGuid === guid);
+
+      if (issues.length > 0) {
+        const resultsDiv = document.getElementById('results');
+        if (resultsDiv) {
+          // Scroll to and highlight issues for this object
+          const issueElements = resultsDiv.querySelectorAll(`[data-object-guid="${guid}"]`);
+          issueElements.forEach(el => el.classList.add('highlighted'));
+          issueElements[0]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    }
   }
 
   private createContainer(): void {
@@ -147,6 +180,27 @@ export class IDSCheckWidget {
           font-size: 11px;
           margin-right: 8px;
         }
+        .object-id {
+          float: right;
+          color: #999;
+          font-size: 11px;
+          background: rgba(0,0,0,0.05);
+          padding: 2px 6px;
+          border-radius: 2px;
+        }
+        .result-item.clickable {
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .result-item.clickable:hover {
+          transform: translateX(4px);
+          box-shadow: inset 2px 0 0 #0066cc;
+        }
+        .result-item.highlighted {
+          background: rgba(0, 102, 204, 0.1) !important;
+          border-left-width: 6px;
+          border-left-color: #0066cc !important;
+        }
       </style>
     `;
   }
@@ -171,7 +225,13 @@ export class IDSCheckWidget {
     try {
       resultsDiv.innerHTML = '<div class="result-item">Validating...</div>';
       const results = await this.validator.validate(ifcInput.files[0], idsInput.files[0]);
+      this.lastValidationResult = results;
       this.displayResults(results, resultsDiv);
+
+      // Highlight affected objects in StreamBIM if available
+      if (this.streamBIM.isAvailable() && results.summary.affectedObjects.length > 0) {
+        await this.streamBIM.highlightObjects(results.summary.affectedObjects);
+      }
     } catch (error) {
       resultsDiv.innerHTML = `<div class="result-item error">Error: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
     }
@@ -180,6 +240,7 @@ export class IDSCheckWidget {
   private displayResults(results: any, container: HTMLElement): void {
     const statusClass = results.pass ? 'success' : 'error';
     const statusText = results.pass ? '✓ PASSED' : '✗ FAILED';
+    const streamBIMAvailable = this.streamBIM.isAvailable();
 
     const summaryHtml = `
       <div class="result-summary result-item ${statusClass}">
@@ -189,6 +250,7 @@ export class IDSCheckWidget {
           <div>Applicable: ${results.summary?.applicableRules || 0}</div>
           <div>Failed: ${results.summary?.failedRules || 0}</div>
           <div>Specifications: ${results.summary?.validSpecifications || 0}</div>
+          ${streamBIMAvailable ? `<div>Affected Objects: ${results.summary?.affectedObjects?.length || 0}</div>` : ''}
         </div>
       </div>
     `;
@@ -197,9 +259,12 @@ export class IDSCheckWidget {
       <div class="results-group">
         <h3 class="group-title">Failures (${results.failures.length})</h3>
         ${results.failures.map((failure: any) => `
-          <div class="result-item error">
+          <div class="result-item error ${failure.objectGuid ? 'clickable' : ''}"
+               ${failure.objectGuid ? `data-object-guid="${failure.objectGuid}"` : ''}
+               ${failure.objectGuid ? `title="Click to select in StreamBIM"` : ''}>
             ${failure.id ? `<span class="rule-id">[${failure.id}]</span>` : ''}
             ${failure.message}
+            ${failure.objectGuid ? `<span class="object-id">(Object: ${failure.objectGuid.substring(0, 8)}...)</span>` : ''}
           </div>
         `).join('')}
       </div>
@@ -209,14 +274,35 @@ export class IDSCheckWidget {
       <div class="results-group">
         <h3 class="group-title">Warnings (${results.warnings.length})</h3>
         ${results.warnings.map((warning: any) => `
-          <div class="result-item warning">
+          <div class="result-item warning ${warning.objectGuid ? 'clickable' : ''}"
+               ${warning.objectGuid ? `data-object-guid="${warning.objectGuid}"` : ''}
+               ${warning.objectGuid ? `title="Click to select in StreamBIM"` : ''}>
             ${warning.id ? `<span class="rule-id">[${warning.id}]</span>` : ''}
             ${warning.message}
+            ${warning.objectGuid ? `<span class="object-id">(Object: ${warning.objectGuid.substring(0, 8)}...)</span>` : ''}
           </div>
         `).join('')}
       </div>
     ` : '';
 
     container.innerHTML = summaryHtml + failuresHtml + warningsHtml;
+
+    // Add click handlers for selectable issues
+    if (streamBIMAvailable) {
+      container.querySelectorAll('[data-object-guid]').forEach(el => {
+        el.addEventListener('click', () => {
+          const guid = el.getAttribute('data-object-guid');
+          if (guid) {
+            this.selectObjectInStreamBIM(guid);
+          }
+        });
+      });
+    }
+  }
+
+  private async selectObjectInStreamBIM(guid: string): Promise<void> {
+    if (this.streamBIM.isAvailable()) {
+      await this.streamBIM.highlightObjects([guid]);
+    }
   }
 }
