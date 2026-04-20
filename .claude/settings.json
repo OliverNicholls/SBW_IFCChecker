@@ -10,7 +10,10 @@
       "Bash(timeout 5 npm run dev)",
       "Bash(npm run:*)",
       "Bash(gh run:*)",
-      "WebFetch(domain:olivernicholls.github.io)"
+      "WebFetch(domain:olivernicholls.github.io)",
+      "Bash(git clean *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Initialize StreamBIM IDS Checker widget from scratch *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Entwicklung\\0002_StreamBIM_Widget\\tools\\ifc-checker",
