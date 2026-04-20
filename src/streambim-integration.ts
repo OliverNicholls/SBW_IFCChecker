@@ -30,25 +30,35 @@ export class StreamBIMIntegration {
       }
 
       console.log('StreamBIM API found, attempting connection...');
-      await StreamBIM.connectToParent(window, {
-        pickedObject: (result: any) => {
-          const guid = result?.guid || result?.id;
-          if (guid) {
-            if (this.selectedGuids.has(guid)) {
-              this.selectedGuids.delete(guid);
-            } else {
-              this.selectedGuids.add(guid);
+      console.log('StreamBIM object:', StreamBIM);
+      console.log('connectToParent method exists:', typeof StreamBIM.connectToParent);
+
+      try {
+        await StreamBIM.connectToParent(window, {
+          pickedObject: (result: any) => {
+            console.log('Object picked:', result);
+            const guid = result?.guid || result?.id;
+            if (guid) {
+              if (this.selectedGuids.has(guid)) {
+                this.selectedGuids.delete(guid);
+              } else {
+                this.selectedGuids.add(guid);
+              }
+              this.onObjectPicked?.(guid);
+              this.onSelectionChanged?.(Array.from(this.selectedGuids));
             }
-            this.onObjectPicked?.(guid);
-            this.onSelectionChanged?.(Array.from(this.selectedGuids));
           }
-        }
-      });
-      this.api = StreamBIM;
-      this.connected = true;
-      console.log('StreamBIM API connected successfully');
-      return true;
+        });
+        this.api = StreamBIM;
+        this.connected = true;
+        console.log('StreamBIM API connected successfully');
+        return true;
+      } catch (connectError) {
+        console.error('Failed to connect to StreamBIM parent:', connectError);
+        throw connectError;
+      }
     } catch (error) {
+      console.error('StreamBIM initialization failed:', error);
       console.warn('StreamBIM not available (running outside StreamBIM):', error);
       return false;
     }
