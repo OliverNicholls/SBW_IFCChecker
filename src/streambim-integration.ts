@@ -14,26 +14,32 @@ export class StreamBIMIntegration {
 
   async initialize(): Promise<boolean> {
     try {
-      console.log('StreamBIM initialization: checking for API...');
+      console.log('StreamBIM initialization: waiting for API injection...');
 
-      const StreamBIM = (window as any).StreamBIM;
+      // Wait for StreamBIM API to be injected (max 5 seconds)
+      const StreamBIM = await this.waitForAPI(5000);
       if (!StreamBIM) {
-        console.warn('StreamBIM not available - widget is not embedded in StreamBIM or API not exposed');
+        console.warn('StreamBIM API not injected - widget is not embedded in StreamBIM or API injection failed');
         return false;
       }
 
-      console.log('StreamBIM API found, calling connectToParent...');
-      console.log('connectToParent is:', typeof StreamBIM.connectToParent);
+      console.log('✓ StreamBIM API found, available methods:', Object.keys(StreamBIM));
 
-      if (typeof StreamBIM.connectToParent !== 'function') {
-        console.error('StreamBIM.connectToParent is not a function, available methods:', Object.keys(StreamBIM));
+      // Try connectToParent first (for widget embedded in StreamBIM iframe)
+      const connectMethod = StreamBIM.connectToParent || StreamBIM.connect;
+      if (!connectMethod) {
+        console.error('No connection method available on StreamBIM API');
         return false;
       }
+
+      const connectMethodName = StreamBIM.connectToParent ? 'connectToParent' : 'connect';
+      console.log(`Connecting via: ${connectMethodName}`);
 
       try {
-        await StreamBIM.connectToParent(window, {
+        // Define all callbacks upfront
+        const callbacks = {
           pickedObject: (result: any) => {
-            console.log('Object picked in widget:', result);
+            console.log('Object picked:', result);
             const guid = result?.guid || result?.id;
             if (guid) {
               if (this.selectedGuids.has(guid)) {
@@ -44,20 +50,66 @@ export class StreamBIMIntegration {
               this.onObjectPicked?.(guid);
               this.onSelectionChanged?.(Array.from(this.selectedGuids));
             }
+          },
+          spacesChanged: (guids: string[]) => {
+            console.log('Spaces changed:', guids);
+            this.onSelectionChanged?.(guids);
+          },
+          cameraChanged: (state: any) => {
+            console.log('Camera changed:', state);
           }
-        });
+        };
+
+        // Try connect() first (standard Penpal pattern), fall back to connectToParent
+        console.log('Attempting to establish connection...');
+        if (typeof StreamBIM.connect === 'function') {
+          console.log('Using connect() method');
+          await StreamBIM.connect(callbacks);
+        } else if (typeof StreamBIM.connectToParent === 'function') {
+          console.log('Using connectToParent() method');
+          await StreamBIM.connectToParent(callbacks);
+        } else {
+          console.error('No suitable connection method found');
+          return false;
+        }
+
         this.api = StreamBIM;
         this.connected = true;
         console.log('✓ StreamBIM API connected successfully');
         return true;
       } catch (connectError) {
-        console.error('❌ Failed to connect to StreamBIM parent:', connectError);
+        console.error('❌ Failed to connect to StreamBIM:', connectError);
         return false;
       }
     } catch (error) {
       console.error('StreamBIM initialization error:', error);
       return false;
     }
+  }
+
+  private waitForAPI(timeoutMs: number): Promise<any> {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const checkInterval = 100; // Check every 100ms
+
+      const checkAPI = () => {
+        const StreamBIM = (window as any).StreamBIM;
+        if (StreamBIM) {
+          resolve(StreamBIM);
+          return;
+        }
+
+        if (Date.now() - startTime >= timeoutMs) {
+          console.warn(`API injection timeout after ${timeoutMs}ms`);
+          resolve(null);
+          return;
+        }
+
+        setTimeout(checkAPI, checkInterval);
+      };
+
+      checkAPI();
+    });
   }
 
   async getObjectInfo(guid: string): Promise<StreamBIMObjectData> {
@@ -108,11 +160,11 @@ export class StreamBIMIntegration {
     }
   }
 
-  setOnObjectPicked(callback: (guid: string) => void): void {
+  onObjectPickedCallback(callback: (guid: string) => void): void {
     this.onObjectPicked = callback;
   }
 
-  setOnSelectionChanged(callback: (guids: string[]) => void): void {
+  onSelectionChangedCallback(callback: (guids: string[]) => void): void {
     this.onSelectionChanged = callback;
   }
 

@@ -15,6 +15,14 @@ export class IDSCheckWidget {
   }
 
   private async initializeStreamBIM(): Promise<void> {
+    // Register callbacks before initialization so they're active when connection is established
+    this.streamBIM.onObjectPickedCallback((guid: string) => {
+      this.onStreamBIMObjectPicked(guid);
+    });
+    this.streamBIM.onSelectionChangedCallback((guids: string[]) => {
+      this.updateSelectionUI(guids);
+    });
+
     const available = await this.streamBIM.initialize();
     const statusDiv = document.getElementById('connection-status');
     if (available) {
@@ -22,12 +30,6 @@ export class IDSCheckWidget {
       if (statusDiv) {
         statusDiv.innerHTML = '<span style="color: #00aa00;">✓ Connected to StreamBIM</span>';
       }
-      this.streamBIM.setOnObjectPicked((guid: string) => {
-        this.onStreamBIMObjectPicked(guid);
-      });
-      this.streamBIM.setOnSelectionChanged((guids: string[]) => {
-        this.updateSelectionUI(guids);
-      });
     } else {
       if (statusDiv) {
         statusDiv.innerHTML = '<span style="color: #ff6600;">✗ Not connected (running outside StreamBIM)</span>';
