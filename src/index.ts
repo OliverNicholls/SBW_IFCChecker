@@ -1,6 +1,7 @@
 const app = document.getElementById('app')!;
 let selectedElement: any = null;
 let parentFileInfo: any = null;
+let visibleModels: Map<string, any> = new Map();
 
 function renderUI() {
   app.innerHTML = `
@@ -30,6 +31,21 @@ function renderUI() {
               <strong>Name:</strong> <span style="color: #0066cc;">${parentFileInfo.name || 'N/A'}</span><br>
               <strong>Path:</strong> <span style="word-break: break-all; color: #666;">${parentFileInfo.path || 'N/A'}</span><br>
               ${parentFileInfo.id ? `<strong>ID:</strong> ${parentFileInfo.id}` : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        ${visibleModels.size > 0 ? `
+          <div style="border-top: 1px solid #eee; padding-top: 16px;">
+            <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Visible Models (${visibleModels.size})</h2>
+            <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; font-size: 14px;">
+              ${Array.from(visibleModels.values()).map((model: any) => `
+                <div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #ddd;">
+                  <strong style="color: #0066cc;">${model.name || 'Unknown'}</strong><br>
+                  <span style="color: #666; font-size: 13px;">${model.path || 'N/A'}</span>
+                  ${model.id ? `<br><span style="color: #999; font-size: 12px;">ID: ${model.id}</span>` : ''}
+                </div>
+              `).join('')}
             </div>
           </div>
         ` : ''}
@@ -98,16 +114,25 @@ async function main() {
             .then((file: any) => {
               console.log('Parent file:', file);
               parentFileInfo = file;
+              if (file && file.id) {
+                visibleModels.set(file.id, file);
+              }
               renderUI();
             })
             .catch((err: any) => {
               console.error('Error getting parent file:', err);
               parentFileInfo = element.file || null;
+              if (element.file && element.file.id) {
+                visibleModels.set(element.file.id, element.file);
+              }
               renderUI();
             });
         } else {
           // If parent file API isn't available, extract from element if possible
           parentFileInfo = element.file || null;
+          if (element.file && element.file.id) {
+            visibleModels.set(element.file.id, element.file);
+          }
           renderUI();
         }
       }
