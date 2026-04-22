@@ -48,7 +48,7 @@ async function loadStreamBIMLibrary(): Promise<any> {
   // Try to load from the public lib folder
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = new URL(/* @vite-ignore */ './lib/streambim-widget-api.min.js', import.meta.url).href;
+    script.src = new URL(/* @vite-ignore */ '../lib/streambim-widget-api.min.js', import.meta.url).href;
     script.onload = () => {
       const api = (window as any).StreamBIM;
       if (api) {
