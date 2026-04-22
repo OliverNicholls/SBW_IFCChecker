@@ -65,6 +65,13 @@ async function loadStreamBIMLibrary(): Promise<any> {
   });
 }
 
+function setupGlobalClickHandler() {
+  // Stop propagation on any clicks within the widget to prevent parent from closing
+  document.addEventListener('click', (e) => {
+    e.stopPropagation();
+  }, true);
+}
+
 async function main() {
   try {
     app.innerHTML = `
@@ -72,6 +79,9 @@ async function main() {
         <p>Initializing widget...</p>
       </div>
     `;
+
+    // Prevent clicks from propagating to parent
+    setupGlobalClickHandler();
 
     // Load StreamBIM library
     const StreamBIM = await loadStreamBIMLibrary();
@@ -100,9 +110,6 @@ async function main() {
           parentFileInfo = element.file || null;
           renderUI();
         }
-
-        // Prevent widget from closing after selection
-        return false;
       }
     });
 
