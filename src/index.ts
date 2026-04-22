@@ -180,8 +180,13 @@ async function loadStreamBIMLibrary(): Promise<any> {
 
 function setupGlobalClickHandler() {
   // Stop propagation on clicks within the widget to prevent parent from closing
+  // But allow button clicks to propagate for event delegation
   app.addEventListener('click', (e) => {
-    e.stopPropagation();
+    const target = e.target as HTMLElement;
+    const isButton = target.closest('[data-tab], [data-group-id]');
+    if (!isButton) {
+      e.stopPropagation();
+    }
   }, true);
 }
 
