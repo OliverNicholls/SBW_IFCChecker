@@ -15,45 +15,64 @@ function renderUI() {
               ${Array.from(selectedElements.entries()).map(([guid]: [string, any]) => {
                 const objInfo = selectedObjectInfoMap.get(guid);
 
-                const formatValue = (val: any): string => {
+                const formatValue = (val: any, unit?: string): string => {
                   if (val === null || val === undefined) return 'N/A';
                   if (typeof val === 'object') return JSON.stringify(val);
-                  return String(val);
+                  const strVal = String(val);
+                  return unit ? `${strVal} ${unit}` : strVal;
                 };
 
-                const renderProperties = (obj: any, depth = 0): string => {
-                  if (!obj || typeof obj !== 'object') return formatValue(obj);
+                const renderGroupedProperties = (): string => {
+                  if (!objInfo) return '<div style="color: #999;">No information available</div>';
 
-                  return Object.entries(obj)
+                  // Check if data has groups structure
+                  if (Array.isArray(objInfo.groups)) {
+                    return objInfo.groups.map((group: any) => {
+                      const props = group.content?.properties || [];
+                      return `
+                        <div style="margin-bottom: 16px;">
+                          <div style="background: #e8f4f8; padding: 10px 12px; border-left: 4px solid #0066cc; margin-bottom: 8px; border-radius: 2px;">
+                            <strong style="color: #0066cc; font-size: 13px;">${group.label}</strong>
+                            <span style="color: #999; font-size: 11px; margin-left: 8px;">(${props.length} properties)</span>
+                          </div>
+                          <div style="padding-left: 8px; border-left: 2px solid #e0e0e0;">
+                            ${props.map((prop: any) => `
+                              <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
+                                <div style="margin-bottom: 2px;">
+                                  <strong style="color: #333;">${prop.key}:</strong>
+                                  <span style="color: #0066cc; font-family: monospace;">${formatValue(prop.value, prop.unit)}</span>
+                                </div>
+                                ${prop.measure ? `<div style="color: #999; font-size: 11px;">📏 ${prop.measure}${prop.unit ? ' (' + prop.unit + ')' : ''}</div>` : ''}
+                                ${prop.valueType ? `<div style="color: #999; font-size: 11px;">Type: ${prop.valueType}</div>` : ''}
+                              </div>
+                            `).join('')}
+                          </div>
+                        </div>
+                      `;
+                    }).join('');
+                  }
+
+                  // Fallback to flat property display
+                  return Object.entries(objInfo)
                     .map(([key, value]: [string, any]) => {
-                      const indent = 'margin-left: ' + (depth * 12) + 'px;';
-                      const isNested = value && typeof value === 'object' && !Array.isArray(value);
-
-                      if (isNested && Object.keys(value).length > 0) {
-                        return `
-                          <div style="${indent}">
-                            <strong style="color: #0066cc;">${key}:</strong>
-                            ${renderProperties(value, depth + 1)}
-                          </div>
-                        `;
-                      } else {
-                        return `
-                          <div style="${indent}margin-top: 4px;">
-                            <strong>${key}:</strong> ${formatValue(value)}
-                          </div>
-                        `;
-                      }
+                      return `
+                        <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px;">
+                          <strong style="color: #333;">${key}:</strong>
+                          <span style="color: #0066cc;">${formatValue(value)}</span>
+                        </div>
+                      `;
                     })
                     .join('');
                 };
 
                 return `
                   <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #ddd;">
-                    <div style="font-family: monospace; overflow-x: auto; font-size: 13px; line-height: 1.6;">
-                      <div style="margin-bottom: 8px; padding: 8px; background: #f0f0f0; border-radius: 4px;">
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow-x: auto;">
+                      <div style="margin-bottom: 12px; padding: 10px 12px; background: #f0f0f0; border-radius: 4px;">
                         <strong style="color: #0066cc; font-size: 14px;">Element ${selectedElements.size > 1 ? '(' + Array.from(selectedElements.keys()).indexOf(guid) + 1 + ')' : ''}</strong>
+                        <div style="color: #666; font-size: 11px; margin-top: 4px; font-family: monospace;">GUID: ${guid}</div>
                       </div>
-                      ${objInfo ? renderProperties(objInfo) : '<div style="color: #999;">No information available</div>'}
+                      ${renderGroupedProperties()}
                     </div>
                   </div>
                 `;
