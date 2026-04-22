@@ -103,14 +103,14 @@ async function main() {
     const StreamBIM = await loadStreamBIMLibrary();
 
     // Connect to parent StreamBIM instance
-    const api = await StreamBIM.connect({
+    await StreamBIM.connect({
       pickedObject: (element: any) => {
         console.log('Element selected:', element);
         selectedElement = element;
 
         // Try to get parent file information
-        if (api.getParentFile) {
-          api.getParentFile(element.globalId)
+        if (StreamBIM.getParentFile) {
+          StreamBIM.getParentFile(element.globalId)
             .then((file: any) => {
               console.log('Parent file:', file);
               parentFileInfo = file;
