@@ -1,5 +1,3 @@
-declare const StreamBIM: any;
-
 const app = document.getElementById('app')!;
 let selectedElement: any = null;
 let parentFileInfo: any = null;
@@ -40,9 +38,43 @@ function renderUI() {
   `;
 }
 
+async function loadStreamBIMLibrary(): Promise<any> {
+  // Check if StreamBIM is already available globally
+  if (typeof (window as any).StreamBIM !== 'undefined') {
+    console.log('StreamBIM API found globally');
+    return (window as any).StreamBIM;
+  }
+
+  // Try to load from the public lib folder
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/lib/streambim-widget-api.min.js';
+    script.onload = () => {
+      const api = (window as any).StreamBIM;
+      if (api) {
+        console.log('StreamBIM API loaded from script');
+        resolve(api);
+      } else {
+        reject(new Error('StreamBIM API not available after script load'));
+      }
+    };
+    script.onerror = () => {
+      reject(new Error('Failed to load StreamBIM API script'));
+    };
+    document.head.appendChild(script);
+  });
+}
+
 async function main() {
   try {
-    renderUI();
+    app.innerHTML = `
+      <div style="padding: 20px; text-align: center; color: #666;">
+        <p>Initializing widget...</p>
+      </div>
+    `;
+
+    // Load StreamBIM library
+    const StreamBIM = await loadStreamBIMLibrary();
 
     // Connect to parent StreamBIM instance
     const api = await StreamBIM.connect({
@@ -60,7 +92,7 @@ async function main() {
             })
             .catch((err: any) => {
               console.error('Error getting parent file:', err);
-              parentFileInfo = null;
+              parentFileInfo = element.file || null;
               renderUI();
             });
         } else {
@@ -71,14 +103,14 @@ async function main() {
       }
     });
 
-    // Setup initial UI message
     renderUI();
     console.log('Widget initialized and connected to StreamBIM');
   } catch (error) {
     app.innerHTML = `
       <div style="padding: 20px; color: #d32f2f;">
-        <h1>Error</h1>
-        <p>Failed to connect to StreamBIM: ${error instanceof Error ? error.message : 'Unknown error'}</p>
+        <h1>Error Initializing Widget</h1>
+        <p style="margin: 8px 0;">${error instanceof Error ? error.message : 'Unknown error'}</p>
+        <p style="margin: 8px 0; font-size: 12px; color: #999;">Check browser console for more details</p>
       </div>
     `;
     console.error('Widget initialization failed:', error);
