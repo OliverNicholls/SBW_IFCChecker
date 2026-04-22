@@ -37,7 +37,7 @@ function renderUI() {
       </div>
 
       <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #eee; text-align: center;">
-        <img src="/Tikab_Logo_Blue.png" alt="Tikab Logo" style="height: 40px; width: auto;">
+        <img src="./Tikab_Logo_Blue.png" alt="Tikab Logo" style="height: 40px; width: auto;">
       </div>
     </div>
   `;
