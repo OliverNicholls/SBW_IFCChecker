@@ -82,8 +82,8 @@ async function loadStreamBIMLibrary(): Promise<any> {
 }
 
 function setupGlobalClickHandler() {
-  // Stop propagation on any clicks within the widget to prevent parent from closing
-  document.addEventListener('click', (e) => {
+  // Stop propagation on clicks within the widget to prevent parent from closing
+  app.addEventListener('click', (e) => {
     e.stopPropagation();
   }, true);
 }
