@@ -104,7 +104,7 @@ async function main() {
 
     // Connect to parent StreamBIM instance
     const api = await StreamBIM.connect({
-      onElementSelected: (element: any) => {
+      pickedObject: (element: any) => {
         console.log('Element selected:', element);
         selectedElement = element;
 
