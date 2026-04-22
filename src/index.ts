@@ -26,10 +26,10 @@ function renderUI() {
       <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; flex: 1; overflow: hidden;">
         <!-- Tabs -->
         <div style="display: flex; border-bottom: 1px solid #e0e0e0;">
-          <button onclick="window.__switchTab('properties')" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'properties' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'properties' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'properties' ? 'bold' : 'normal'}; color: ${activeTab === 'properties' ? '#0066cc' : '#666'}; transition: all 0.2s;">
+          <button data-tab="properties" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'properties' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'properties' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'properties' ? 'bold' : 'normal'}; color: ${activeTab === 'properties' ? '#0066cc' : '#666'}; transition: all 0.2s;">
             Properties
           </button>
-          <button onclick="window.__switchTab('checks')" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'checks' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'checks' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'checks' ? 'bold' : 'normal'}; color: ${activeTab === 'checks' ? '#0066cc' : '#666'}; transition: all 0.2s;">
+          <button data-tab="checks" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'checks' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'checks' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'checks' ? 'bold' : 'normal'}; color: ${activeTab === 'checks' ? '#0066cc' : '#666'}; transition: all 0.2s;">
             Checks
           </button>
         </div>
@@ -46,9 +46,22 @@ function renderUI() {
     </div>
   `;
 
-  // Attach event handlers
-  (window as any).__switchTab = switchTab;
-  (window as any).__toggleGroup = toggleGroup;
+  // Attach event handlers using addEventListener
+  const tabButtons = app.querySelectorAll('[data-tab]');
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const tab = (button as HTMLButtonElement).dataset.tab as 'properties' | 'checks';
+      switchTab(tab);
+    });
+  });
+
+  const groupButtons = app.querySelectorAll('[data-group-id]');
+  groupButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const groupId = (button as HTMLButtonElement).dataset.groupId;
+      if (groupId) toggleGroup(groupId);
+    });
+  });
 }
 
 function renderPropertiesTab(): string {
@@ -89,7 +102,7 @@ function renderElementProperties(objInfo: any): string {
       const props = group.content?.properties || [];
       return `
         <div style="margin-bottom: 12px;">
-          <button onclick="window.__toggleGroup('${groupId}')" style="width: 100%; padding: 10px 12px; background: #e8f4f8; border: 1px solid #0066cc; border-left: 4px solid #0066cc; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #0066cc; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+          <button data-group-id="${groupId}" style="width: 100%; padding: 10px 12px; background: #e8f4f8; border: 1px solid #0066cc; border-left: 4px solid #0066cc; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #0066cc; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
             <span>${group.label} (${props.length})</span>
             <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
           </button>
@@ -123,7 +136,7 @@ function renderElementProperties(objInfo: any): string {
     const isExpanded = expandedGroups.has(groupId);
     html += `
       <div style="margin-bottom: 12px;">
-        <button onclick="window.__toggleGroup('${groupId}')" style="width: 100%; padding: 10px 12px; background: #f0f0f0; border: 1px solid #666; border-left: 4px solid #666; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #666; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+        <button data-group-id="${groupId}" style="width: 100%; padding: 10px 12px; background: #f0f0f0; border: 1px solid #666; border-left: 4px solid #666; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #666; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
           <span>Other Properties (${additionalProps.length})</span>
           <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
         </button>
