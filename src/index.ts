@@ -114,24 +114,30 @@ async function main() {
             .then((file: any) => {
               console.log('Parent file:', file);
               parentFileInfo = file;
-              if (file && file.id) {
-                visibleModels.set(file.id, file);
+              const modelKey = file?.id || file?.name || JSON.stringify(file);
+              if (file && modelKey) {
+                visibleModels.set(modelKey, file);
+                console.log('Added to visible models:', modelKey, 'Total:', visibleModels.size);
               }
               renderUI();
             })
             .catch((err: any) => {
               console.error('Error getting parent file:', err);
               parentFileInfo = element.file || null;
-              if (element.file && element.file.id) {
-                visibleModels.set(element.file.id, element.file);
+              const modelKey = element.file?.id || element.file?.name || JSON.stringify(element.file);
+              if (element.file && modelKey) {
+                visibleModels.set(modelKey, element.file);
+                console.log('Added to visible models (fallback):', modelKey, 'Total:', visibleModels.size);
               }
               renderUI();
             });
         } else {
           // If parent file API isn't available, extract from element if possible
           parentFileInfo = element.file || null;
-          if (element.file && element.file.id) {
-            visibleModels.set(element.file.id, element.file);
+          const modelKey = element.file?.id || element.file?.name || JSON.stringify(element.file);
+          if (element.file && modelKey) {
+            visibleModels.set(modelKey, element.file);
+            console.log('Added to visible models (no getParentFile):', modelKey, 'Total:', visibleModels.size);
           }
           renderUI();
         }
