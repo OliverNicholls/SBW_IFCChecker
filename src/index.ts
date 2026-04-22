@@ -45,23 +45,6 @@ function renderUI() {
       </div>
     </div>
   `;
-
-  // Attach event handlers using addEventListener
-  const tabButtons = app.querySelectorAll('[data-tab]');
-  tabButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      const tab = (button as HTMLButtonElement).dataset.tab as 'properties' | 'checks';
-      switchTab(tab);
-    });
-  });
-
-  const groupButtons = app.querySelectorAll('[data-group-id]');
-  groupButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      const groupId = (button as HTMLButtonElement).dataset.groupId;
-      if (groupId) toggleGroup(groupId);
-    });
-  });
 }
 
 function renderPropertiesTab(): string {
@@ -209,6 +192,20 @@ async function main() {
         <p>Initializing widget...</p>
       </div>
     `;
+
+    // Setup event delegation for persistent listeners
+    app.addEventListener('click', (e: Event) => {
+      const target = e.target as HTMLElement;
+      const button = target.closest('[data-tab], [data-group-id]') as HTMLButtonElement;
+
+      if (!button) return;
+
+      if (button.dataset.tab) {
+        switchTab(button.dataset.tab as 'properties' | 'checks');
+      } else if (button.dataset.groupId) {
+        toggleGroup(button.dataset.groupId);
+      }
+    }, false);
 
     // Prevent clicks from propagating to parent
     setupGlobalClickHandler();
