@@ -4,7 +4,7 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:www.npmjs.com)",
-      "Read(//c/Users/oliver.nicholls/OneDrive - Tikab Strukturmekanik AB/Dokument/Tikab/Entwicklung/0002_StreamBIM_Widget/**)",
+      "Read(//c/Users/oliver.nicholls/OneDrive - Tikab Strukturmekanik AB/Dokument/Tikab/Utveckling/0002_StreamBIM_Widget/**)",
       "Bash(rm -rf node_modules package-lock.json)",
       "Bash(npm install:*)",
       "Bash(timeout 5 npm run dev)",
@@ -18,11 +18,16 @@
       "Bash(git commit -m 'Fix dependencies and implement working IDS validator *)",
       "Bash(git commit -m 'Configure for GitHub Pages deployment *)",
       "Bash(git commit -m 'Fix GitHub Actions: remove failing delete-artifact step *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(cd \"c:\\\\\\\\Users\\\\\\\\oliver.nicholls\\\\\\\\OneDrive - Tikab Strukturmekanik AB\\\\\\\\Dokument\\\\\\\\Tikab\\\\\\\\Utveckling\\\\\\\\0002_StreamBIM_Widget\")",
+      "Bash(git commit *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(rm -rf src dist README.md LICENSE)",
+      "Read(//c/c/Users/oliver.nicholls/OneDrive - Tikab Strukturmekanik AB/Dokument/Tikab/Utveckling/**)"
     ],
     "additionalDirectories": [
-      "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Entwicklung\\0002_StreamBIM_Widget\\tools\\ifc-checker",
-      "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Entwicklung\\0002_StreamBIM_Widget",
+      "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Utveckling\\0002_StreamBIM_Widget\\tools\\ifc-checker",
+      "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Utveckling\\0002_StreamBIM_Widget",
       "c:\\Users\\oliver.nicholls\\.claude\\memory"
     ]
   }

@@ -1,7 +1,7 @@
 {
-  "name": "streambim-ids-checker",
+  "name": "streambim-widget-template",
   "version": "1.0.0",
-  "description": "StreamBIM widget for validating IFC files against IDS rules",
+  "description": "StreamBIM Widget Template",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -11,8 +11,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "streambim-widget-api": "^1.4.0",
-    "web-ifc": "^0.0.57"
+    "streambim-widget-api": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
