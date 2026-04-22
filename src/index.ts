@@ -25,9 +25,11 @@ function renderUI() {
                 const renderGroupedProperties = (): string => {
                   if (!objInfo) return '<div style="color: #999;">No information available</div>';
 
+                  let html = '';
+
                   // Check if data has groups structure
                   if (Array.isArray(objInfo.groups)) {
-                    return objInfo.groups.map((group: any) => {
+                    html += objInfo.groups.map((group: any) => {
                       const props = group.content?.properties || [];
                       return `
                         <div style="margin-bottom: 16px;">
@@ -52,17 +54,32 @@ function renderUI() {
                     }).join('');
                   }
 
-                  // Fallback to flat property display
-                  return Object.entries(objInfo)
-                    .map(([key, value]: [string, any]) => {
-                      return `
-                        <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px;">
-                          <strong style="color: #333;">${key}:</strong>
-                          <span style="color: #0066cc;">${formatValue(value)}</span>
+                  // Show any additional top-level properties not in groups
+                  const groupProperties = new Set(['groups']);
+                  const additionalProps = Object.entries(objInfo)
+                    .filter(([key]: [string, any]) => !groupProperties.has(key))
+                    .filter(([_key, value]: [string, any]) => value !== null && value !== undefined && !Array.isArray(value));
+
+                  if (additionalProps.length > 0) {
+                    html += `
+                      <div style="margin-bottom: 16px;">
+                        <div style="background: #f0f0f0; padding: 10px 12px; border-left: 4px solid #666; margin-bottom: 8px; border-radius: 2px;">
+                          <strong style="color: #666; font-size: 13px;">Other Properties</strong>
+                          <span style="color: #999; font-size: 11px; margin-left: 8px;">(${additionalProps.length} properties)</span>
                         </div>
-                      `;
-                    })
-                    .join('');
+                        <div style="padding-left: 8px; border-left: 2px solid #e0e0e0;">
+                          ${additionalProps.map(([key, value]: [string, any]) => `
+                            <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
+                              <strong style="color: #333;">${key}:</strong>
+                              <span style="color: #666; font-family: monospace;">${typeof value === 'object' ? JSON.stringify(value) : formatValue(value)}</span>
+                            </div>
+                          `).join('')}
+                        </div>
+                      </div>
+                    `;
+                  }
+
+                  return html || '<div style="color: #999;">No information available</div>';
                 };
 
                 return `
