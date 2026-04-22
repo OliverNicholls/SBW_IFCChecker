@@ -141,17 +141,24 @@ async function main() {
 
             // Try to get parent file information
             if (StreamBIM.getParentFile) {
-              return StreamBIM.getParentFile(element.guid).then((file: any) => {
-                console.log('Parent file:', file);
-                parentFileInfo = file;
-                const modelKey = file?.id || file?.name || JSON.stringify(file);
-                if (file && modelKey) {
-                  visibleModels.set(modelKey, file);
-                  console.log('Added to visible models:', modelKey, 'Total:', visibleModels.size);
-                }
-                renderUI();
-              });
+              console.log('Calling getParentFile...');
+              return StreamBIM.getParentFile(element.guid)
+                .then((file: any) => {
+                  console.log('Parent file:', file);
+                  parentFileInfo = file;
+                  const modelKey = file?.id || file?.name || JSON.stringify(file);
+                  if (file && modelKey) {
+                    visibleModels.set(modelKey, file);
+                    console.log('Added to visible models:', modelKey, 'Total:', visibleModels.size);
+                  }
+                  renderUI();
+                })
+                .catch((err: any) => {
+                  console.error('Error getting parent file:', err);
+                  renderUI();
+                });
             } else {
+              console.log('getParentFile method not available on StreamBIM');
               renderUI();
             }
           })

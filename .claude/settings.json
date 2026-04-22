@@ -26,7 +26,8 @@
       "Read(//c/c/Users/oliver.nicholls/OneDrive - Tikab Strukturmekanik AB/Dokument/Tikab/Utveckling/**)",
       "Read(//c/Users/oliver.nicholls/OneDrive - Tikab Strukturmekanik AB/Dokument/Tikab/Entwicklung/0002_StreamBIM_Widget/**)",
       "Bash(mkdir -p public/lib)",
-      "Bash(cp node_modules/streambim-widget-api/dist/streambim-widget-api.min.js public/lib/)"
+      "Bash(cp node_modules/streambim-widget-api/dist/streambim-widget-api.min.js public/lib/)",
+      "Read(//c/Users/oliver.nicholls/OneDrive/ -/ Tikab/ Strukturmekanik/ AB/Dokument/Tikab/Utveckling/0002_StreamBIM_Widget/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\oliver.nicholls\\OneDrive - Tikab Strukturmekanik AB\\Dokument\\Tikab\\Utveckling\\0002_StreamBIM_Widget\\tools\\ifc-checker",
