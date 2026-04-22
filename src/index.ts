@@ -1,106 +1,43 @@
 const app = document.getElementById('app')!;
 let selectedElements: Map<string, any> = new Map();
 let selectedObjectInfoMap: Map<string, any> = new Map();
+let activeTab: 'properties' | 'checks' = 'properties';
+let expandedGroups: Set<string> = new Set();
+
+function toggleGroup(groupId: string) {
+  if (expandedGroups.has(groupId)) {
+    expandedGroups.delete(groupId);
+  } else {
+    expandedGroups.add(groupId);
+  }
+  renderUI();
+}
+
+function switchTab(tab: 'properties' | 'checks') {
+  activeTab = tab;
+  renderUI();
+}
 
 function renderUI() {
   app.innerHTML = `
     <div style="padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh;">
       <h1 style="margin: 0 0 20px 0; font-size: 24px;">StreamBIM Element Inspector</h1>
 
-      <div style="background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; overflow-y: auto;">
-        ${selectedElements.size > 0 ? `
-          <div style="margin-bottom: 16px;">
-            <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Selected Elements (${selectedElements.size})</h2>
-            <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; font-size: 14px;">
-              ${Array.from(selectedElements.entries()).map(([guid]: [string, any]) => {
-                const objInfo = selectedObjectInfoMap.get(guid);
+      <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+        <!-- Tabs -->
+        <div style="display: flex; border-bottom: 1px solid #e0e0e0;">
+          <button onclick="window.__switchTab('properties')" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'properties' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'properties' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'properties' ? 'bold' : 'normal'}; color: ${activeTab === 'properties' ? '#0066cc' : '#666'}; transition: all 0.2s;">
+            Properties
+          </button>
+          <button onclick="window.__switchTab('checks')" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'checks' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'checks' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'checks' ? 'bold' : 'normal'}; color: ${activeTab === 'checks' ? '#0066cc' : '#666'}; transition: all 0.2s;">
+            Checks
+          </button>
+        </div>
 
-                const formatValue = (val: any, unit?: string): string => {
-                  if (val === null || val === undefined) return 'N/A';
-                  if (typeof val === 'object') return JSON.stringify(val);
-                  const strVal = String(val);
-                  return unit ? `${strVal} ${unit}` : strVal;
-                };
-
-                const renderGroupedProperties = (): string => {
-                  if (!objInfo) return '<div style="color: #999;">No information available</div>';
-
-                  let html = '';
-
-                  // Check if data has groups structure
-                  if (Array.isArray(objInfo.groups)) {
-                    html += objInfo.groups.map((group: any) => {
-                      const props = group.content?.properties || [];
-                      return `
-                        <div style="margin-bottom: 16px;">
-                          <div style="background: #e8f4f8; padding: 10px 12px; border-left: 4px solid #0066cc; margin-bottom: 8px; border-radius: 2px;">
-                            <strong style="color: #0066cc; font-size: 13px;">${group.label}</strong>
-                            <span style="color: #999; font-size: 11px; margin-left: 8px;">(${props.length} properties)</span>
-                          </div>
-                          <div style="padding-left: 8px; border-left: 2px solid #e0e0e0;">
-                            ${props.map((prop: any) => `
-                              <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
-                                <div style="margin-bottom: 2px;">
-                                  <strong style="color: #333;">${prop.key}:</strong>
-                                  <span style="color: #0066cc; font-family: monospace;">${formatValue(prop.value, prop.unit)}</span>
-                                </div>
-                                ${prop.measure ? `<div style="color: #999; font-size: 11px;">📏 ${prop.measure}${prop.unit ? ' (' + prop.unit + ')' : ''}</div>` : ''}
-                                ${prop.valueType ? `<div style="color: #999; font-size: 11px;">Type: ${prop.valueType}</div>` : ''}
-                              </div>
-                            `).join('')}
-                          </div>
-                        </div>
-                      `;
-                    }).join('');
-                  }
-
-                  // Show any additional top-level properties not in groups
-                  const groupProperties = new Set(['groups']);
-                  const additionalProps = Object.entries(objInfo)
-                    .filter(([key]: [string, any]) => !groupProperties.has(key))
-                    .filter(([_key, value]: [string, any]) => value !== null && value !== undefined && !Array.isArray(value));
-
-                  if (additionalProps.length > 0) {
-                    html += `
-                      <div style="margin-bottom: 16px;">
-                        <div style="background: #f0f0f0; padding: 10px 12px; border-left: 4px solid #666; margin-bottom: 8px; border-radius: 2px;">
-                          <strong style="color: #666; font-size: 13px;">Other Properties</strong>
-                          <span style="color: #999; font-size: 11px; margin-left: 8px;">(${additionalProps.length} properties)</span>
-                        </div>
-                        <div style="padding-left: 8px; border-left: 2px solid #e0e0e0;">
-                          ${additionalProps.map(([key, value]: [string, any]) => `
-                            <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
-                              <strong style="color: #333;">${key}:</strong>
-                              <span style="color: #666; font-family: monospace;">${typeof value === 'object' ? JSON.stringify(value) : formatValue(value)}</span>
-                            </div>
-                          `).join('')}
-                        </div>
-                      </div>
-                    `;
-                  }
-
-                  return html || '<div style="color: #999;">No information available</div>';
-                };
-
-                return `
-                  <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #ddd;">
-                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow-x: auto;">
-                      <div style="margin-bottom: 12px; padding: 10px 12px; background: #f0f0f0; border-radius: 4px;">
-                        <strong style="color: #0066cc; font-size: 14px;">Element ${selectedElements.size > 1 ? '(' + Array.from(selectedElements.keys()).indexOf(guid) + 1 + ')' : ''}</strong>
-                        <div style="color: #666; font-size: 11px; margin-top: 4px; font-family: monospace;">GUID: ${guid}</div>
-                      </div>
-                      ${renderGroupedProperties()}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        ` : `
-          <div style="color: #999; padding: 16px; text-align: center;">
-            Click on an element in StreamBIM to inspect it
-          </div>
-        `}
+        <!-- Tab Content -->
+        <div style="padding: 16px; overflow-y: auto; flex: 1;">
+          ${activeTab === 'properties' ? renderPropertiesTab() : renderChecksTab()}
+        </div>
       </div>
 
       <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #eee; text-align: center;">
@@ -108,6 +45,114 @@ function renderUI() {
       </div>
     </div>
   `;
+
+  // Attach event handlers
+  (window as any).__switchTab = switchTab;
+  (window as any).__toggleGroup = toggleGroup;
+}
+
+function renderPropertiesTab(): string {
+  if (selectedElements.size === 0) {
+    return '<div style="color: #999; padding: 16px; text-align: center;">Click on an element in StreamBIM to inspect it</div>';
+  }
+
+  return `
+    <div style="margin-bottom: 16px;">
+      <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Selected Elements (${selectedElements.size})</h2>
+    </div>
+    ${Array.from(selectedElements.entries()).map(([guid]: [string, any]) => {
+      const objInfo = selectedObjectInfoMap.get(guid);
+      return `
+        <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #ddd;">
+          <div style="margin-bottom: 12px; padding: 10px 12px; background: #f0f0f0; border-radius: 4px;">
+            <strong style="color: #0066cc; font-size: 14px;">Element ${selectedElements.size > 1 ? '(' + Array.from(selectedElements.keys()).indexOf(guid) + 1 + ')' : ''}</strong>
+            <div style="color: #666; font-size: 11px; margin-top: 4px; font-family: monospace;">GUID: ${guid}</div>
+          </div>
+          ${renderElementProperties(objInfo)}
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function renderElementProperties(objInfo: any): string {
+  if (!objInfo) return '<div style="color: #999;">No information available</div>';
+
+  let html = '';
+  let groupIndex = 0;
+
+  // Check if data has groups structure
+  if (Array.isArray(objInfo.groups)) {
+    html += objInfo.groups.map((group: any) => {
+      const groupId = `group-${groupIndex++}`;
+      const isExpanded = expandedGroups.has(groupId);
+      const props = group.content?.properties || [];
+      return `
+        <div style="margin-bottom: 12px;">
+          <button onclick="window.__toggleGroup('${groupId}')" style="width: 100%; padding: 10px 12px; background: #e8f4f8; border: 1px solid #0066cc; border-left: 4px solid #0066cc; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #0066cc; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+            <span>${group.label} (${props.length})</span>
+            <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
+          </button>
+          ${isExpanded ? `
+            <div style="padding: 8px; border-left: 2px solid #e0e0e0; margin-top: 4px;">
+              ${props.map((prop: any) => `
+                <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
+                  <div style="margin-bottom: 2px;">
+                    <strong style="color: #333;">${prop.key}:</strong>
+                    <span style="color: #0066cc; font-family: monospace;">${formatValue(prop.value, prop.unit)}</span>
+                  </div>
+                  ${prop.measure ? `<div style="color: #999; font-size: 11px;">📏 ${prop.measure}${prop.unit ? ' (' + prop.unit + ')' : ''}</div>` : ''}
+                  ${prop.valueType ? `<div style="color: #999; font-size: 11px;">Type: ${prop.valueType}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Show any additional top-level properties not in groups
+  const groupProperties = new Set(['groups']);
+  const additionalProps = Object.entries(objInfo)
+    .filter(([key]: [string, any]) => !groupProperties.has(key))
+    .filter(([_key, value]: [string, any]) => value !== null && value !== undefined && !Array.isArray(value));
+
+  if (additionalProps.length > 0) {
+    const groupId = `other-props-${groupIndex}`;
+    const isExpanded = expandedGroups.has(groupId);
+    html += `
+      <div style="margin-bottom: 12px;">
+        <button onclick="window.__toggleGroup('${groupId}')" style="width: 100%; padding: 10px 12px; background: #f0f0f0; border: 1px solid #666; border-left: 4px solid #666; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #666; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+          <span>Other Properties (${additionalProps.length})</span>
+          <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
+        </button>
+        ${isExpanded ? `
+          <div style="padding: 8px; border-left: 2px solid #e0e0e0; margin-top: 4px;">
+            ${additionalProps.map(([key, value]: [string, any]) => `
+              <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
+                <strong style="color: #333;">${key}:</strong>
+                <span style="color: #666; font-family: monospace;">${typeof value === 'object' ? JSON.stringify(value) : formatValue(value)}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  return html;
+}
+
+function formatValue(val: any, unit?: string): string {
+  if (val === null || val === undefined) return 'N/A';
+  if (typeof val === 'object') return JSON.stringify(val);
+  const strVal = String(val);
+  return unit ? `${strVal} ${unit}` : strVal;
+}
+
+function renderChecksTab(): string {
+  return '<div style="color: #999; padding: 16px; text-align: center;">Checks will be available soon</div>';
 }
 
 async function loadStreamBIMLibrary(): Promise<any> {
