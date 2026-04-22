@@ -100,6 +100,9 @@ async function main() {
           parentFileInfo = element.file || null;
           renderUI();
         }
+
+        // Prevent widget from closing after selection
+        return false;
       }
     });
 
