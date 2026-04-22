@@ -21,7 +21,7 @@ function switchTab(tab: 'properties' | 'checks') {
 function renderUI() {
   app.innerHTML = `
     <div style="padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh;">
-      <h1 style="margin: 0 0 20px 0; font-size: 24px;">StreamBIM Element Inspector</h1>
+      <h1 style="margin: 0 0 20px 0; font-size: 24px;">BIM-spector</h1>
 
       <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; flex: 1; overflow: hidden;">
         <!-- Tabs -->
