@@ -23,6 +23,8 @@ function renderUI() {
                     <div style="font-family: monospace; overflow-x: auto; font-size: 13px;">
                       <strong style="color: #0066cc;">GUID:</strong> ${guid}<br>
                       ${objInfo?.layer ? `<strong>Layer:</strong> ${objInfo.layer}<br>` : ''}
+                      ${objInfo?.documentId || objInfo?.['@DocumentId'] ? `<strong>Document ID:</strong> ${objInfo?.documentId || objInfo?.['@DocumentId']}<br>` : ''}
+                      ${parentFileInfo?.path ? `<strong>File Path:</strong> <span style="word-break: break-all; color: #666;">${parentFileInfo.path}</span><br>` : ''}
                       ${propKeys.length > 0 ? `<strong style="display: block; margin-top: 8px;">IFC Properties:</strong>` : ''}
                       ${propKeys.map(key => `<div style="margin-left: 8px; margin-top: 4px;"><strong>${key}:</strong> ${props[key] || 'N/A'}</div>`).join('')}
                     </div>
@@ -132,7 +134,9 @@ async function main() {
         // Get detailed object information using the guid
         StreamBIM.getObjectInfo(element.guid)
           .then((objectInfo: any) => {
-            console.log('Object info:', objectInfo);
+            console.log('Full Object info:', objectInfo);
+            console.log('Object properties:', objectInfo?.properties);
+            console.log('Document ID:', objectInfo?.documentId || objectInfo?.['@DocumentId'] || 'Not found');
             selectedObjectInfoMap.set(element.guid, objectInfo);
 
             // Try to get parent file information
