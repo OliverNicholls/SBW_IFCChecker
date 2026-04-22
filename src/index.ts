@@ -1,5 +1,6 @@
 const app = document.getElementById('app')!;
 let selectedElement: any = null;
+let selectedObjectInfo: any = null;
 let parentFileInfo: any = null;
 let visibleModels: Map<string, any> = new Map();
 
@@ -13,9 +14,9 @@ function renderUI() {
           <div style="margin-bottom: 16px;">
             <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Selected Element</h2>
             <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; font-size: 14px; font-family: monospace; overflow-x: auto;">
-              <strong>GlobalId:</strong> ${selectedElement.globalId || 'N/A'}<br>
-              <strong>Name:</strong> ${selectedElement.name || 'N/A'}<br>
-              <strong>Type:</strong> ${selectedElement.type || 'N/A'}
+              <strong>GUID:</strong> ${selectedElement.guid || 'N/A'}<br>
+              ${selectedObjectInfo?.layer ? `<strong>Layer:</strong> ${selectedObjectInfo.layer}<br>` : ''}
+              ${selectedObjectInfo?.properties?.Name ? `<strong>Name:</strong> ${selectedObjectInfo.properties.Name}` : ''}
             </div>
           </div>
         ` : `
@@ -112,6 +113,7 @@ async function main() {
         StreamBIM.getObjectInfo(element.guid)
           .then((objectInfo: any) => {
             console.log('Object info:', objectInfo);
+            selectedObjectInfo = objectInfo;
 
             // Try to get parent file information
             if (StreamBIM.getParentFile) {
