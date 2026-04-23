@@ -1,51 +1,96 @@
 {
-  "ifc_file": "A-400-V-00.ifc",
-  "generated_at": "2026-04-23T10:30:00Z",
+  "ifc_file": "K-200-V-000.ifc",
+  "generated_at": "2026-04-23T17:56:32+00:00",
   "summary": {
     "total_elements": 2,
-    "passed": 1,
-    "failed": 1
+    "elements_with_failures": 1,
+    "total_checks": 6,
+    "total_failures": 3
   },
   "elements": [
     {
-      "global_id": "1XB8o41kHLpDm$sjV5FzNv",
-      "entity_type": "IfcBuildingElementProxy",
-      "entity_name": "EL/IT",
+      "global_id": "0Us9qtX$9F6ghfk$g7XdZk",
+      "entity_type": "IfcRoof",
+      "entity_name": "Basic Roof:TAKKASSETTER:1343616",
       "checks": [
         {
-          "rule": "thickness-check",
-          "name": "Wall Thickness",
-          "status": "fail",
-          "message": "Wall thickness is below minimum requirement",
-          "expected": 200,
-          "actual": 150
+          "ids_file": "BIP_Konstruktion_P1.ids",
+          "requirement_ref": "REQ-104",
+          "spec_name": "TypeID",
+          "requirement_type": "Property",
+          "property_set": "BIP",
+          "property_name": "BIP.TypeID",
+          "expected_value": "Required",
+          "actual_value": "null",
+          "result": "FAIL",
+          "reason": "Property is not set"
         },
         {
-          "rule": "placement-check",
-          "name": "Element Placement",
-          "status": "pass"
+          "ids_file": "BIP_Konstruktion_P1.ids",
+          "requirement_ref": "REQ-105",
+          "spec_name": "BuildingType",
+          "requirement_type": "Property",
+          "property_set": "BIP",
+          "property_name": "BIP.BuildingType",
+          "expected_value": "Residential",
+          "actual_value": "Residential",
+          "result": "PASS",
+          "reason": ""
+        },
+        {
+          "ids_file": "BIP_Konstruktion_P1.ids",
+          "requirement_ref": "REQ-106",
+          "spec_name": "MaterialClass",
+          "requirement_type": "Property",
+          "property_set": "BIP",
+          "property_name": "BIP.MaterialClass",
+          "expected_value": "A1",
+          "actual_value": "C",
+          "result": "FAIL",
+          "reason": "Material class below required standard"
         }
       ]
     },
     {
-      "global_id": "2YC9p52lIMyEn#tkW6GaOw",
+      "global_id": "1XB8o41kHLpDm$sjV5FzNv",
       "entity_type": "IfcWall",
       "entity_name": "WALL-001",
       "checks": [
         {
-          "rule": "thickness-check",
-          "name": "Wall Thickness",
-          "status": "pass"
+          "ids_file": "BIP_Konstruktion_P1.ids",
+          "requirement_ref": "REQ-104",
+          "spec_name": "TypeID",
+          "requirement_type": "Property",
+          "property_set": "BIP",
+          "property_name": "BIP.TypeID",
+          "expected_value": "Required",
+          "actual_value": "W-120",
+          "result": "PASS",
+          "reason": ""
         },
         {
-          "rule": "placement-check",
-          "name": "Element Placement",
-          "status": "pass"
+          "ids_file": "BIP_Konstruktion_P1.ids",
+          "requirement_ref": "REQ-105",
+          "spec_name": "BuildingType",
+          "requirement_type": "Property",
+          "property_set": "BIP",
+          "property_name": "BIP.BuildingType",
+          "expected_value": "Residential",
+          "actual_value": "Residential",
+          "result": "PASS",
+          "reason": ""
         },
         {
-          "rule": "material-check",
-          "name": "Material Assignment",
-          "status": "pass"
+          "ids_file": "BIP_Konstruktion_P1.ids",
+          "requirement_ref": "REQ-106",
+          "spec_name": "MaterialClass",
+          "requirement_type": "Property",
+          "property_set": "BIP",
+          "property_name": "BIP.MaterialClass",
+          "expected_value": "A1",
+          "actual_value": "A1",
+          "result": "PASS",
+          "reason": ""
         }
       ]
     }

@@ -73,15 +73,30 @@ function renderPropertiesTab(): string {
             <strong style="color: #0066cc; font-size: 14px;">Element ${selectedElements.size > 1 ? '(' + Array.from(selectedElements.keys()).indexOf(guid) + 1 + ')' : ''}</strong>
             <div style="color: #666; font-size: 11px; margin-top: 4px; font-family: monospace;">GUID: ${guid}</div>
           </div>
-          ${renderElementProperties(objInfo)}
+          ${renderElementProperties(objInfo, guid)}
         </div>
       `;
     }).join('')}
   `;
 }
 
-function renderElementProperties(objInfo: any): string {
+function renderElementProperties(objInfo: any, guid?: string): string {
   if (!objInfo) return '<div style="color: #999;">No information available</div>';
+
+  const checkLookup = new Map<string, string>();
+  if (guid) {
+    const importedEl = importedData.get(guid);
+    if (Array.isArray(importedEl?.checks)) {
+      for (const c of importedEl.checks) {
+        if (c.property_set && c.property_name && c.result) {
+          const bareKey = c.property_name.startsWith(c.property_set + '.')
+            ? c.property_name.slice(c.property_set.length + 1)
+            : c.property_name;
+          checkLookup.set(`${c.property_set}::${bareKey}`, c.result.toUpperCase());
+        }
+      }
+    }
+  }
 
   let html = '';
   let groupIndex = 0;
@@ -100,16 +115,25 @@ function renderElementProperties(objInfo: any): string {
           </button>
           ${isExpanded ? `
             <div style="padding: 8px; border-left: 2px solid #e0e0e0; margin-top: 4px;">
-              ${props.map((prop: any) => `
+              ${props.map((prop: any) => {
+                const checkResult = checkLookup.get(`${group.label}::${prop.key}`);
+                const statusIcon = checkResult === 'PASS'
+                  ? '<span style="color: #4caf50; font-weight: bold; margin-left: 4px;" title="PASS">✓</span>'
+                  : checkResult === 'FAIL'
+                  ? '<span style="color: #d32f2f; font-weight: bold; margin-left: 4px;" title="FAIL">✗</span>'
+                  : '';
+                return `
                 <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
                   <div style="margin-bottom: 2px;">
                     <strong style="color: #333;">${prop.key}:</strong>
                     <span style="color: #0066cc; font-family: monospace;">${formatValue(prop.value, prop.unit)}</span>
+                    ${statusIcon}
                   </div>
                   ${prop.measure ? `<div style="color: #999; font-size: 11px;">📏 ${prop.measure}${prop.unit ? ' (' + prop.unit + ')' : ''}</div>` : ''}
                   ${prop.valueType ? `<div style="color: #999; font-size: 11px;">Type: ${prop.valueType}</div>` : ''}
                 </div>
-              `).join('')}
+              `;
+              }).join('')}
             </div>
           ` : ''}
         </div>
