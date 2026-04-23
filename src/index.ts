@@ -1,8 +1,11 @@
 const app = document.getElementById('app')!;
 let selectedElements: Map<string, any> = new Map();
 let selectedObjectInfoMap: Map<string, any> = new Map();
+let importedData: Map<string, any> = new Map();
+let importedFileMeta: { ifc_file: string; generated_at: string } | null = null;
 let activeTab: 'properties' | 'checks' = 'properties';
 let expandedGroups: Set<string> = new Set();
+let db: IDBDatabase | null = null;
 
 function toggleGroup(groupId: string) {
   if (expandedGroups.has(groupId)) {
@@ -21,7 +24,13 @@ function switchTab(tab: 'properties' | 'checks') {
 function renderUI() {
   app.innerHTML = `
     <div style="padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh;">
-      <h1 style="margin: 0 0 20px 0; font-size: 24px;">BIM-spector</h1>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h1 style="margin: 0; font-size: 24px;">BIM-spector</h1>
+        <button data-action="import-file" style="padding: 8px 12px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
+          Import Checks
+        </button>
+      </div>
+      ${importedFileMeta ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e8f4f8; border-radius: 4px; font-size: 12px; color: #0066cc;"><strong>${importedFileMeta.ifc_file}</strong> • ${importedFileMeta.generated_at} • ${importedData.size} elements</div>` : ''}
 
       <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; flex: 1; overflow: hidden;">
         <!-- Tabs -->
@@ -148,7 +157,86 @@ function formatValue(val: any, unit?: string): string {
 }
 
 function renderChecksTab(): string {
-  return '<div style="color: #999; padding: 16px; text-align: center;">Checks will be available soon</div>';
+  if (importedData.size === 0) {
+    return '<div style="color: #999; padding: 16px; text-align: center;">Import a JSON file to see checks</div>';
+  }
+
+  if (selectedElements.size === 0) {
+    return '<div style="color: #999; padding: 16px; text-align: center;">Select an element to see its checks</div>';
+  }
+
+  return `
+    <div style="margin-bottom: 16px;">
+      <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Checks (${selectedElements.size})</h2>
+    </div>
+    ${Array.from(selectedElements.entries()).map(([guid]: [string, any]) => {
+      const importedElement = importedData.get(guid);
+      return `
+        <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #ddd;">
+          <div style="margin-bottom: 12px; padding: 10px 12px; background: #f0f0f0; border-radius: 4px;">
+            <strong style="color: #0066cc; font-size: 14px;">Element ${selectedElements.size > 1 ? '(' + Array.from(selectedElements.keys()).indexOf(guid) + 1 + ')' : ''}</strong>
+            <div style="color: #666; font-size: 11px; margin-top: 4px; font-family: monospace;">GUID: ${guid}</div>
+          </div>
+          ${renderElementChecks(importedElement)}
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function renderElementChecks(importedElement: any): string {
+  if (!importedElement) {
+    return '<div style="color: #999; padding: 8px;">No check data for this element</div>';
+  }
+
+  if (!Array.isArray(importedElement.checks) || importedElement.checks.length === 0) {
+    return '<div style="color: #999; padding: 8px;">No checks defined for this element</div>';
+  }
+
+  const passes = importedElement.checks.filter((c: any) => c.status === 'pass' || c.status === true);
+  const failures = importedElement.checks.filter((c: any) => c.status === 'fail' || c.status === false);
+
+  let html = '';
+
+  if (failures.length > 0) {
+    html += `
+      <div style="margin-bottom: 12px;">
+        <div style="padding: 8px 12px; background: #ffebee; border-left: 4px solid #d32f2f; border-radius: 2px; margin-bottom: 8px;">
+          <strong style="color: #d32f2f; font-size: 13px;">Failed (${failures.length})</strong>
+        </div>
+        ${failures.map((check: any) => `
+          <div style="margin-bottom: 8px; padding: 8px; background: #fafafa; border-left: 2px solid #d32f2f; border-radius: 2px; font-size: 12px;">
+            <div style="display: flex; align-items: center; margin-bottom: 4px;">
+              <span style="display: inline-block; width: 8px; height: 8px; background: #d32f2f; border-radius: 50%; margin-right: 6px;"></span>
+              <strong style="color: #333;">${check.rule || check.name || 'Unnamed check'}</strong>
+            </div>
+            ${check.message ? `<div style="color: #666; margin-bottom: 4px;">${check.message}</div>` : ''}
+            ${check.expected || check.actual ? `<div style="color: #999; font-size: 11px;">Expected: ${check.expected}, Got: ${check.actual}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  if (passes.length > 0) {
+    html += `
+      <div style="margin-bottom: 12px;">
+        <div style="padding: 8px 12px; background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 2px; margin-bottom: 8px;">
+          <strong style="color: #4caf50; font-size: 13px;">Passed (${passes.length})</strong>
+        </div>
+        ${passes.map((check: any) => `
+          <div style="margin-bottom: 8px; padding: 8px; background: #fafafa; border-left: 2px solid #4caf50; border-radius: 2px; font-size: 12px;">
+            <div style="display: flex; align-items: center;">
+              <span style="display: inline-block; width: 8px; height: 8px; background: #4caf50; border-radius: 50%; margin-right: 6px;"></span>
+              <strong style="color: #333;">${check.rule || check.name || 'Unnamed check'}</strong>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  return html;
 }
 
 async function loadStreamBIMLibrary(): Promise<any> {
@@ -183,11 +271,112 @@ function setupGlobalClickHandler() {
   // But allow button clicks to propagate for event delegation
   app.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
-    const isButton = target.closest('[data-tab], [data-group-id]');
+    const isButton = target.closest('[data-tab], [data-group-id], [data-action]');
     if (!isButton) {
       e.stopPropagation();
     }
   }, true);
+}
+
+function initDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('bim-spector-db', 1);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+
+    request.onupgradeneeded = (event) => {
+      const database = (event.target as IDBOpenDBRequest).result;
+      if (!database.objectStoreNames.contains('imported-elements')) {
+        database.createObjectStore('imported-elements', { keyPath: 'global_id' });
+      }
+      if (!database.objectStoreNames.contains('meta')) {
+        database.createObjectStore('meta');
+      }
+    };
+  });
+}
+
+function saveImportedData(elements: any[], meta: any): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!db) return reject(new Error('Database not initialized'));
+
+    const elementsStore = db.transaction('imported-elements', 'readwrite').objectStore('imported-elements');
+    const metaStore = db.transaction('meta', 'readwrite').objectStore('meta');
+
+    elementsStore.clear();
+    elements.forEach((el) => {
+      elementsStore.add(el);
+    });
+
+    metaStore.put(meta, 'file-info');
+
+    setTimeout(() => resolve(), 100);
+  });
+}
+
+function loadImportedData(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!db) return reject(new Error('Database not initialized'));
+
+    const elementsStore = db.transaction('imported-elements', 'readonly').objectStore('imported-elements');
+    const metaStore = db.transaction('meta', 'readonly').objectStore('meta');
+
+    const elementsRequest = elementsStore.getAll();
+    const metaRequest = metaStore.get('file-info');
+
+    elementsRequest.onsuccess = () => {
+      const elements = elementsRequest.result;
+      elements.forEach((el) => {
+        importedData.set(el.global_id, el);
+      });
+    };
+
+    metaRequest.onsuccess = () => {
+      importedFileMeta = metaRequest.result || null;
+    };
+
+    Promise.all([
+      new Promise((resolve) => {
+        elementsRequest.onsuccess = resolve;
+      }),
+      new Promise((resolve) => {
+        metaRequest.onsuccess = resolve;
+      }),
+    ]).then(() => resolve());
+  });
+}
+
+function handleFileImport(file: File): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        const json = JSON.parse(e.target?.result as string);
+
+        if (!Array.isArray(json.elements)) {
+          throw new Error('Invalid JSON: missing "elements" array');
+        }
+
+        const meta = {
+          ifc_file: json.ifc_file || file.name,
+          generated_at: json.generated_at || new Date().toISOString(),
+        };
+
+        await saveImportedData(json.elements, meta);
+        importedData.clear();
+        await loadImportedData();
+        renderUI();
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
 }
 
 async function main() {
@@ -198,10 +387,14 @@ async function main() {
       </div>
     `;
 
+    // Initialize IndexedDB
+    db = await initDB();
+    await loadImportedData();
+
     // Setup event delegation for persistent listeners
     app.addEventListener('click', (e: Event) => {
       const target = e.target as HTMLElement;
-      const button = target.closest('[data-tab], [data-group-id]') as HTMLButtonElement;
+      const button = target.closest('[data-tab], [data-group-id], [data-action]') as HTMLButtonElement;
 
       if (!button) return;
 
@@ -209,6 +402,23 @@ async function main() {
         switchTab(button.dataset.tab as 'properties' | 'checks');
       } else if (button.dataset.groupId) {
         toggleGroup(button.dataset.groupId);
+      } else if (button.dataset.action === 'import-file') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (!file) return;
+
+          try {
+            await handleFileImport(file);
+            console.log('File imported successfully');
+          } catch (err) {
+            console.error('Import error:', err);
+            alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          }
+        };
+        input.click();
       }
     }, false);
 

@@ -1,0 +1,53 @@
+{
+  "ifc_file": "A-400-V-00.ifc",
+  "generated_at": "2026-04-23T10:30:00Z",
+  "summary": {
+    "total_elements": 2,
+    "passed": 1,
+    "failed": 1
+  },
+  "elements": [
+    {
+      "global_id": "1XB8o41kHLpDm$sjV5FzNv",
+      "entity_type": "IfcBuildingElementProxy",
+      "entity_name": "EL/IT",
+      "checks": [
+        {
+          "rule": "thickness-check",
+          "name": "Wall Thickness",
+          "status": "fail",
+          "message": "Wall thickness is below minimum requirement",
+          "expected": 200,
+          "actual": 150
+        },
+        {
+          "rule": "placement-check",
+          "name": "Element Placement",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "global_id": "2YC9p52lIMyEn#tkW6GaOw",
+      "entity_type": "IfcWall",
+      "entity_name": "WALL-001",
+      "checks": [
+        {
+          "rule": "thickness-check",
+          "name": "Wall Thickness",
+          "status": "pass"
+        },
+        {
+          "rule": "placement-check",
+          "name": "Element Placement",
+          "status": "pass"
+        },
+        {
+          "rule": "material-check",
+          "name": "Material Assignment",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}
