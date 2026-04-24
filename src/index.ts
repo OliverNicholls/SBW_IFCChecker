@@ -362,8 +362,11 @@ function saveImportedData(elements: any[], meta: any): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!db) return reject(new Error('Database not initialized'));
 
-    const elementsStore = db.transaction('imported-elements', 'readwrite').objectStore('imported-elements');
-    const metaStore = db.transaction('meta', 'readwrite').objectStore('meta');
+    const elementsTransaction = db.transaction('imported-elements', 'readwrite');
+    const metaTransaction = db.transaction('meta', 'readwrite');
+
+    const elementsStore = elementsTransaction.objectStore('imported-elements');
+    const metaStore = metaTransaction.objectStore('meta');
 
     elementsStore.clear();
     console.log(`Saving ${elements.length} elements to IndexedDB`);
@@ -372,12 +375,38 @@ function saveImportedData(elements: any[], meta: any): Promise<void> {
     });
 
     metaStore.put(meta, 'file-info');
-    console.log('Meta saved to IndexedDB:', meta);
+    console.log('Meta saved to IndexedDB');
 
-    setTimeout(() => {
-      console.log('Save complete, resolving promise');
-      resolve();
-    }, 100);
+    let elementsComplete = false;
+    let metaComplete = false;
+
+    elementsTransaction.oncomplete = () => {
+      console.log('Elements transaction complete');
+      elementsComplete = true;
+      if (metaComplete) {
+        console.log('Both transactions complete, resolving');
+        resolve();
+      }
+    };
+
+    metaTransaction.oncomplete = () => {
+      console.log('Meta transaction complete');
+      metaComplete = true;
+      if (elementsComplete) {
+        console.log('Both transactions complete, resolving');
+        resolve();
+      }
+    };
+
+    elementsTransaction.onerror = () => {
+      console.error('Elements transaction error:', elementsTransaction.error);
+      reject(elementsTransaction.error);
+    };
+
+    metaTransaction.onerror = () => {
+      console.error('Meta transaction error:', metaTransaction.error);
+      reject(metaTransaction.error);
+    };
   });
 }
 
