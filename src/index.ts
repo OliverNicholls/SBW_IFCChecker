@@ -252,8 +252,8 @@ function renderElementChecks(importedElement: any): string {
     return '<div style="color: #999; padding: 8px;">No checks defined for this element</div>';
   }
 
-  const passes = importedElement.checks.filter((c: any) => c.status === 'pass' || c.status === true);
-  const failures = importedElement.checks.filter((c: any) => c.status === 'fail' || c.status === false);
+  const passes = importedElement.checks.filter((c: any) => c.result?.toUpperCase() === 'PASS' || c.status === 'pass' || c.status === true);
+  const failures = importedElement.checks.filter((c: any) => c.result?.toUpperCase() === 'FAIL' || c.status === 'fail' || c.status === false);
 
   let html = '';
 
@@ -267,10 +267,11 @@ function renderElementChecks(importedElement: any): string {
           <div style="margin-bottom: 8px; padding: 8px; background: #fafafa; border-left: 2px solid #d32f2f; border-radius: 2px; font-size: 12px;">
             <div style="display: flex; align-items: center; margin-bottom: 4px;">
               <span style="display: inline-block; width: 8px; height: 8px; background: #d32f2f; border-radius: 50%; margin-right: 6px;"></span>
-              <strong style="color: #333;">${check.rule || check.name || 'Unnamed check'}</strong>
+              <strong style="color: #333;">${check.spec_name || check.rule || check.name || 'Unnamed check'}</strong>
             </div>
-            ${check.message ? `<div style="color: #666; margin-bottom: 4px;">${check.message}</div>` : ''}
-            ${check.expected || check.actual ? `<div style="color: #999; font-size: 11px;">Expected: ${check.expected}, Got: ${check.actual}</div>` : ''}
+            ${check.requirement_ref ? `<div style="color: #999; font-size: 11px; margin-bottom: 2px;">Requirement: ${check.requirement_ref}</div>` : ''}
+            ${check.reason ? `<div style="color: #666; margin-bottom: 4px;">${check.reason}</div>` : ''}
+            ${check.expected_value ? `<div style="color: #999; font-size: 11px;">Expected: ${check.expected_value}, Got: ${check.actual_value}</div>` : ''}
           </div>
         `).join('')}
       </div>
@@ -285,10 +286,11 @@ function renderElementChecks(importedElement: any): string {
         </div>
         ${passes.map((check: any) => `
           <div style="margin-bottom: 8px; padding: 8px; background: #fafafa; border-left: 2px solid #4caf50; border-radius: 2px; font-size: 12px;">
-            <div style="display: flex; align-items: center;">
+            <div style="display: flex; align-items: center; margin-bottom: 4px;">
               <span style="display: inline-block; width: 8px; height: 8px; background: #4caf50; border-radius: 50%; margin-right: 6px;"></span>
-              <strong style="color: #333;">${check.rule || check.name || 'Unnamed check'}</strong>
+              <strong style="color: #333;">${check.spec_name || check.rule || check.name || 'Unnamed check'}</strong>
             </div>
+            ${check.requirement_ref ? `<div style="color: #999; font-size: 11px;">Requirement: ${check.requirement_ref}</div>` : ''}
           </div>
         `).join('')}
       </div>
