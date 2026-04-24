@@ -289,7 +289,6 @@ function renderElementProperties(objInfo: any, guid?: string): string {
               }).join('')}
               ${groupMissingProps.length > 0 ? `
                 <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
-                  <div style="font-size: 11px; color: #ff9800; font-weight: bold; margin-bottom: 6px;">Missing Properties (${groupMissingProps.length})</div>
                   ${groupMissingProps.map((p: any) => {
                     const checkResult = p.check.result?.toUpperCase();
                     const statusIcon = checkResult === 'PASS'
@@ -298,14 +297,17 @@ function renderElementProperties(objInfo: any, guid?: string): string {
                       ? '<span style="color: #d32f2f; font-weight: bold; margin-left: 4px;" title="FAIL">✗</span>'
                       : '';
                     return `
-                    <div style="margin-bottom: 8px; padding: 6px 8px; background: #fff9e6; border-left: 2px solid #ff9800; border-radius: 3px; font-size: 12px;">
+                    <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-left: 3px solid #ff9800; border-radius: 3px; font-size: 12px; opacity: 0.85;">
                       <div style="margin-bottom: 2px;">
                         <strong style="color: #333;">${p.key}:</strong>
-                        <span style="color: #999; font-style: italic;">not found in element</span>
-                        ${statusIcon}
+                        <span style="color: #999; font-family: monospace;">—</span>
+                        <span style="color: #ff9800; font-weight: bold; margin-left: 4px;" title="MISSING">⚠</span>
                       </div>
-                      ${p.check.message ? `<div style="color: #666; margin-bottom: 2px;">${p.check.message}</div>` : ''}
-                      ${p.check.expected || p.check.actual ? `<div style="color: #999; font-size: 11px;">Expected: ${p.check.expected}, Got: ${p.check.actual}</div>` : ''}
+                      ${p.check.message ? `<div style="color: #999; font-size: 11px;">${p.check.message}</div>` : ''}
+                      ${p.check.expected || p.check.actual ? `<div style="color: #999; font-size: 10px;">Expected: ${p.check.expected}, Got: ${p.check.actual}</div>` : ''}
+                      <div style="margin-top: 4px; padding: 4px; background: #fff3e0; border-radius: 2px;">
+                        <div style="color: #e65100; font-weight: bold; font-size: 11px;">Result: MISSING</div>
+                      </div>
                     </div>
                     `;
                   }).join('')}
