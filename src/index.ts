@@ -504,10 +504,16 @@ function setupGlobalClickHandler() {
 
 function clearHighlight() {
   if (StreamBIMAPI) {
-    StreamBIMAPI.highlight([])
-      .catch((err: any) => {
-        console.warn('Could not clear highlight:', err);
-      });
+    try {
+      const result = StreamBIMAPI.highlight([]);
+      if (result && typeof result.catch === 'function') {
+        result.catch((err: any) => {
+          console.warn('Could not clear highlight:', err);
+        });
+      }
+    } catch (err) {
+      console.warn('Could not clear highlight:', err);
+    }
   }
 }
 
@@ -744,10 +750,16 @@ async function main() {
 
         // Highlight the selected elements in the 3D view
         const guidsToHighlight = Array.from(selectedElements.keys());
-        StreamBIMAPI.highlight(guidsToHighlight)
-          .catch((err: any) => {
-            console.warn('Could not highlight elements:', err);
-          });
+        try {
+          const result = StreamBIMAPI.highlight(guidsToHighlight);
+          if (result && typeof result.catch === 'function') {
+            result.catch((err: any) => {
+              console.warn('Could not highlight elements:', err);
+            });
+          }
+        } catch (err) {
+          console.warn('Could not highlight elements:', err);
+        }
 
         // Get detailed object information using the guid
         StreamBIMAPI.getObjectInfo(element.guid)
