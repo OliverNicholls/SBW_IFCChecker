@@ -194,7 +194,34 @@ function renderChecksTab(): string {
   }
 
   if (selectedElements.size === 0) {
-    return '<div style="color: #999; padding: 16px; text-align: center;">Select an element to see its checks</div>';
+    return `
+      <div>
+        <div style="margin-bottom: 16px; padding: 12px; background: #e8f4f8; border-left: 4px solid #0066cc; border-radius: 2px;">
+          <strong style="color: #0066cc; font-size: 13px;">Imported Data</strong>
+          <div style="color: #666; font-size: 12px; margin-top: 4px;">
+            ${importedFileMeta ? `<div><strong>${importedFileMeta.ifc_file}</strong> • ${importedFileMeta.generated_at}</div>` : ''}
+            <div style="margin-top: 4px;"><strong>${importedData.size} elements imported</strong></div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #333;">All Imported Elements</h3>
+          <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
+            ${Array.from(importedData.entries()).map(([guid, element]: [string, any]) => {
+              const checkCount = Array.isArray(element.checks) ? element.checks.length : 0;
+              return `
+                <div style="padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 12px;">
+                  <div style="font-family: monospace; color: #0066cc; font-size: 11px; margin-bottom: 2px;">${guid}</div>
+                  <div style="color: #666;"><strong>${checkCount}</strong> checks</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div style="color: #999; padding: 12px; text-align: center; font-size: 12px;">Select an element to see its specific checks</div>
+      </div>
+    `;
   }
 
   return `
