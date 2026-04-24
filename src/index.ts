@@ -290,12 +290,6 @@ function renderElementProperties(objInfo: any, guid?: string): string {
               ${groupMissingProps.length > 0 ? `
                 <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
                   ${groupMissingProps.map((p: any) => {
-                    const checkResult = p.check.result?.toUpperCase();
-                    const statusIcon = checkResult === 'PASS'
-                      ? '<span style="color: #4caf50; font-weight: bold; margin-left: 4px;" title="PASS">✓</span>'
-                      : checkResult === 'FAIL'
-                      ? '<span style="color: #d32f2f; font-weight: bold; margin-left: 4px;" title="FAIL">✗</span>'
-                      : '';
                     return `
                     <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-left: 3px solid #ff9800; border-radius: 3px; font-size: 12px; opacity: 0.85;">
                       <div style="margin-bottom: 2px;">
