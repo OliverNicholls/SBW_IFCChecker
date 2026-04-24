@@ -3,7 +3,7 @@ let selectedElements: Map<string, any> = new Map();
 let selectedObjectInfoMap: Map<string, any> = new Map();
 let importedData: Map<string, any> = new Map();
 let importedFileMeta: { ifc_file: string; generated_at: string } | null = null;
-let activeTab: 'properties' | 'checks' = 'properties';
+let activeTab: 'properties' | 'checks' | 'dashboard' = 'properties';
 let expandedGroups: Set<string> = new Set();
 let showMissingProperties: boolean = true;
 let db: IDBDatabase | null = null;
@@ -48,7 +48,7 @@ function toggleMissingProperties() {
   renderUI();
 }
 
-function switchTab(tab: 'properties' | 'checks') {
+function switchTab(tab: 'properties' | 'checks' | 'dashboard') {
   activeTab = tab;
   renderUI();
 }
@@ -111,11 +111,14 @@ function renderUI() {
           <button data-tab="checks" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'checks' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'checks' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'checks' ? 'bold' : 'normal'}; color: ${activeTab === 'checks' ? '#0066cc' : '#666'}; transition: all 0.2s;">
             Checks
           </button>
+          <button data-tab="dashboard" style="flex: 1; padding: 12px 16px; background: ${activeTab === 'dashboard' ? '#fff' : '#f5f5f5'}; border: none; border-bottom: ${activeTab === 'dashboard' ? '2px solid #0066cc' : 'none'}; cursor: pointer; font-size: 14px; font-weight: ${activeTab === 'dashboard' ? 'bold' : 'normal'}; color: ${activeTab === 'dashboard' ? '#0066cc' : '#666'}; transition: all 0.2s;">
+            Dashboard
+          </button>
         </div>
 
         <!-- Tab Content -->
         <div style="padding: 16px; overflow-y: auto; flex: 1;">
-          ${activeTab === 'properties' ? renderPropertiesTab() : renderChecksTab()}
+          ${activeTab === 'properties' ? renderPropertiesTab() : activeTab === 'checks' ? renderChecksTab() : renderDashboardTab()}
         </div>
       </div>
 
@@ -467,6 +470,105 @@ function renderElementChecks(importedElement: any): string {
   return html;
 }
 
+function renderDashboardTab(): string {
+  if (importedData.size === 0) {
+    return '<div style="color: #999; padding: 16px; text-align: center;">Import a JSON file to see dashboard</div>';
+  }
+
+  const requirementStats = new Map<string, { passed: number; failed: number; total: number }>();
+
+  importedData.forEach((element: any) => {
+    if (Array.isArray(element.checks)) {
+      element.checks.forEach((check: any) => {
+        const reqRef = check.requirement_ref || 'Unnamed Requirement';
+        const isPassed = check.result?.toUpperCase() === 'PASS' || check.status === 'pass' || check.status === true;
+
+        if (!requirementStats.has(reqRef)) {
+          requirementStats.set(reqRef, { passed: 0, failed: 0, total: 0 });
+        }
+
+        const stats = requirementStats.get(reqRef)!;
+        stats.total++;
+        if (isPassed) {
+          stats.passed++;
+        } else {
+          stats.failed++;
+        }
+      });
+    }
+  });
+
+  if (requirementStats.size === 0) {
+    return '<div style="color: #999; padding: 16px; text-align: center;">No requirements with checks found</div>';
+  }
+
+  const sortedRequirements = Array.from(requirementStats.entries()).sort((a, b) => {
+    const aRate = a[1].passed / a[1].total;
+    const bRate = b[1].passed / b[1].total;
+    return bRate - aRate;
+  });
+
+  const overallPassed = Array.from(requirementStats.values()).reduce((sum, stats) => sum + stats.passed, 0);
+  const overallTotal = Array.from(requirementStats.values()).reduce((sum, stats) => sum + stats.total, 0);
+  const overallRate = overallTotal > 0 ? (overallPassed / overallTotal) * 100 : 0;
+
+  return `
+    <div style="margin-bottom: 20px;">
+      <div style="padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+        <div style="font-size: 28px; font-weight: bold; margin-bottom: 4px;">${overallRate.toFixed(1)}%</div>
+        <div style="font-size: 14px; margin-bottom: 12px;">Overall Success Rate</div>
+        <div style="display: flex; gap: 12px; font-size: 12px;">
+          <div>
+            <span style="color: rgba(255,255,255,0.8);">Passed</span>
+            <div style="font-weight: bold; font-size: 16px;">${overallPassed}</div>
+          </div>
+          <div>
+            <span style="color: rgba(255,255,255,0.8);">Total</span>
+            <div style="font-weight: bold; font-size: 16px;">${overallTotal}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 16px;">
+      <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Requirements (${requirementStats.size})</h2>
+    </div>
+
+    <div style="display: grid; gap: 12px;">
+      ${sortedRequirements.map(([reqName, stats]: [string, any]) => {
+        const successRate = (stats.passed / stats.total) * 100;
+        const getColor = (rate: number) => {
+          if (rate === 100) return '#4caf50';
+          if (rate >= 75) return '#8bc34a';
+          if (rate >= 50) return '#ff9800';
+          return '#d32f2f';
+        };
+        const barColor = getColor(successRate);
+        return `
+          <div style="padding: 12px; background: #f9f9f9; border-radius: 6px; border: 1px solid #e0e0e0;">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+              <div style="flex: 1;">
+                <div style="font-weight: bold; color: #333; font-size: 13px; word-break: break-word;">${reqName}</div>
+                <div style="color: #999; font-size: 11px; margin-top: 4px;">
+                  <span style="color: #4caf50; font-weight: bold;">${stats.passed}</span>
+                  <span style="color: #666;">passed of</span>
+                  <span style="font-weight: bold; color: #333;">${stats.total}</span>
+                </div>
+              </div>
+              <div style="text-align: right; margin-left: 12px;">
+                <div style="font-weight: bold; font-size: 16px; color: ${barColor};">${successRate.toFixed(0)}%</div>
+              </div>
+            </div>
+            <div style="width: 100%; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden;">
+              <div style="width: ${successRate}%; height: 100%; background: ${barColor}; transition: width 0.3s ease;"></div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 async function loadStreamBIMLibrary(): Promise<any> {
   // Check if StreamBIM is already available globally
   if (typeof (window as any).StreamBIM !== 'undefined') {
@@ -685,7 +787,7 @@ async function main() {
       if (!button) return;
 
       if (button.dataset.tab) {
-        switchTab(button.dataset.tab as 'properties' | 'checks');
+        switchTab(button.dataset.tab as 'properties' | 'checks' | 'dashboard');
       } else if (button.dataset.groupId) {
         toggleGroup(button.dataset.groupId);
       } else if (button.dataset.action === 'import-file') {
