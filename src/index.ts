@@ -475,20 +475,22 @@ function renderDashboardTab(): string {
     return '<div style="color: #999; padding: 16px; text-align: center;">Import a JSON file to see dashboard</div>';
   }
 
-  const requirementStats = new Map<string, { passed: number; failed: number; total: number }>();
+  const requirementStats = new Map<string, { passed: number; failed: number; total: number; tests: Set<string> }>();
 
   importedData.forEach((element: any) => {
     if (Array.isArray(element.checks)) {
       element.checks.forEach((check: any) => {
         const reqRef = check.requirement_ref || 'Unnamed Requirement';
         const isPassed = check.result?.toUpperCase() === 'PASS' || check.status === 'pass' || check.status === true;
+        const testName = check.spec_name || check.rule || check.name || 'Unnamed test';
 
         if (!requirementStats.has(reqRef)) {
-          requirementStats.set(reqRef, { passed: 0, failed: 0, total: 0 });
+          requirementStats.set(reqRef, { passed: 0, failed: 0, total: 0, tests: new Set() });
         }
 
         const stats = requirementStats.get(reqRef)!;
         stats.total++;
+        stats.tests.add(testName);
         if (isPassed) {
           stats.passed++;
         } else {
@@ -502,10 +504,15 @@ function renderDashboardTab(): string {
     return '<div style="color: #999; padding: 16px; text-align: center;">No requirements with checks found</div>';
   }
 
+  const extractReqNumber = (reqName: string): number => {
+    const match = reqName.match(/\d+/);
+    return match ? parseInt(match[0], 10) : Infinity;
+  };
+
   const sortedRequirements = Array.from(requirementStats.entries()).sort((a, b) => {
-    const aRate = a[1].passed / a[1].total;
-    const bRate = b[1].passed / b[1].total;
-    return bRate - aRate;
+    const aNum = extractReqNumber(a[0]);
+    const bNum = extractReqNumber(b[0]);
+    return aNum - bNum;
   });
 
   const overallPassed = Array.from(requirementStats.values()).reduce((sum, stats) => sum + stats.passed, 0);
@@ -513,6 +520,15 @@ function renderDashboardTab(): string {
   const overallRate = overallTotal > 0 ? (overallPassed / overallTotal) * 100 : 0;
 
   return `
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2 style="margin: 0; font-size: 16px; color: #333;">Dashboard</h2>
+        <button disabled style="padding: 8px 12px; background: #f0f0f0; color: #999; border: 1px solid #ddd; border-radius: 4px; cursor: not-allowed; font-size: 12px; font-weight: bold;">
+          🤖 AI Analysis (Coming Soon)
+        </button>
+      </div>
+    </div>
+
     <div style="margin-bottom: 20px;">
       <div style="padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
         <div style="font-size: 28px; font-weight: bold; margin-bottom: 4px;">${overallRate.toFixed(1)}%</div>
@@ -531,7 +547,7 @@ function renderDashboardTab(): string {
     </div>
 
     <div style="margin-bottom: 16px;">
-      <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Requirements (${requirementStats.size})</h2>
+      <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #333;">Requirements (${requirementStats.size})</h3>
     </div>
 
     <div style="display: grid; gap: 12px;">
@@ -544,11 +560,15 @@ function renderDashboardTab(): string {
           return '#d32f2f';
         };
         const barColor = getColor(successRate);
+        const testsList = Array.from(stats.tests).join(', ');
         return `
           <div style="padding: 12px; background: #f9f9f9; border-radius: 6px; border: 1px solid #e0e0e0;">
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
               <div style="flex: 1;">
                 <div style="font-weight: bold; color: #333; font-size: 13px; word-break: break-word;">${reqName}</div>
+                <div style="color: #666; font-size: 11px; margin-top: 4px; word-break: break-word;">
+                  <strong>Tests:</strong> ${testsList}
+                </div>
                 <div style="color: #999; font-size: 11px; margin-top: 4px;">
                   <span style="color: #4caf50; font-weight: bold;">${stats.passed}</span>
                   <span style="color: #666;">passed of</span>
