@@ -8,6 +8,7 @@ let expandedGroups: Set<string> = new Set();
 let showMissingProperties: boolean = true;
 let db: IDBDatabase | null = null;
 let pinnedPsets: Set<string> = new Set();
+let StreamBIMAPI: any = null;
 
 function toggleGroup(groupId: string) {
   if (expandedGroups.has(groupId)) {
@@ -69,6 +70,9 @@ async function clearImportedData() {
 
     importedData.clear();
     importedFileMeta = null;
+    selectedElements.clear();
+    selectedObjectInfoMap.clear();
+    clearHighlight();
     renderUI();
   } catch (error) {
     console.error('Error clearing imported data:', error);
@@ -498,6 +502,15 @@ function setupGlobalClickHandler() {
   }, true);
 }
 
+function clearHighlight() {
+  if (StreamBIMAPI) {
+    StreamBIMAPI.highlight([])
+      .catch((err: any) => {
+        console.warn('Could not clear highlight:', err);
+      });
+  }
+}
+
 function initDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('bim-spector-db', 1);
@@ -713,10 +726,10 @@ async function main() {
     setupGlobalClickHandler();
 
     // Load StreamBIM library
-    const StreamBIM = await loadStreamBIMLibrary();
+    StreamBIMAPI = await loadStreamBIMLibrary();
 
     // Connect to parent StreamBIM instance
-    await StreamBIM.connect({
+    await StreamBIMAPI.connect({
       pickedObject: (element: any) => {
         console.log('Element selected:', element);
 
@@ -729,8 +742,15 @@ async function main() {
         // Add or replace the selection
         selectedElements.set(element.guid, element);
 
+        // Highlight the selected elements in the 3D view
+        const guidsToHighlight = Array.from(selectedElements.keys());
+        StreamBIMAPI.highlight(guidsToHighlight)
+          .catch((err: any) => {
+            console.warn('Could not highlight elements:', err);
+          });
+
         // Get detailed object information using the guid
-        StreamBIM.getObjectInfo(element.guid)
+        StreamBIMAPI.getObjectInfo(element.guid)
           .then((objectInfo: any) => {
             console.log('Full Object info:', objectInfo);
             console.log('Object properties:', objectInfo?.properties);
