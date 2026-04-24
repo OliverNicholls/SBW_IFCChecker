@@ -303,7 +303,6 @@ function renderElementProperties(objInfo: any, guid?: string): string {
               ` : ''}
             </div>
           ` : ''}
-          </div>
         </div>
       `;
     }).join('');
