@@ -5,6 +5,7 @@ let importedData: Map<string, any> = new Map();
 let importedFileMeta: { ifc_file: string; generated_at: string } | null = null;
 let activeTab: 'properties' | 'checks' = 'properties';
 let expandedGroups: Set<string> = new Set();
+let showMissingProperties: boolean = true;
 let db: IDBDatabase | null = null;
 
 function toggleGroup(groupId: string) {
@@ -13,6 +14,11 @@ function toggleGroup(groupId: string) {
   } else {
     expandedGroups.add(groupId);
   }
+  renderUI();
+}
+
+function toggleMissingProperties() {
+  showMissingProperties = !showMissingProperties;
   renderUI();
 }
 
@@ -89,9 +95,19 @@ function renderPropertiesTab(): string {
     return '<div style="color: #999; padding: 16px; text-align: center;">Click on an element in StreamBIM to inspect it</div>';
   }
 
+  const hasMissingProps = Array.from(selectedElements.keys()).some(guid => {
+    const importedEl = importedData.get(guid);
+    return importedEl && Array.isArray(importedEl.checks) && importedEl.checks.length > 0;
+  });
+
   return `
     <div style="margin-bottom: 16px;">
-      <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Selected Elements (${selectedElements.size})</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2 style="margin: 0; font-size: 16px; color: #333;">Selected Elements (${selectedElements.size})</h2>
+        ${hasMissingProps ? `<button data-action="toggle-missing" style="padding: 4px 8px; background: #fff3e0; color: #ff9800; border: 1px solid #ff9800; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;">
+          ${showMissingProperties ? '✓' : '○'} Missing
+        </button>` : ''}
+      </div>
     </div>
     ${Array.from(selectedElements.entries()).map(([guid]: [string, any]) => {
       const objInfo = selectedObjectInfoMap.get(guid);
@@ -132,6 +148,23 @@ function renderElementProperties(objInfo: any, guid?: string): string {
   // Build a set of all properties that exist in objInfo
   const existingProps = new Set<string>();
 
+  // First, collect all missing properties by PropertySet
+  const missingPropsLookup = new Map<string, any>();
+  if (showMissingProperties && importedEl && Array.isArray(importedEl.checks)) {
+    importedEl.checks.forEach((check: any) => {
+      if (check.property_set && check.property_name) {
+        const bareKey = check.property_name.startsWith(check.property_set + '.')
+          ? check.property_name.slice(check.property_set.length + 1)
+          : check.property_name;
+        missingPropsLookup.set(`${check.property_set}::${bareKey}`, {
+          key: bareKey,
+          check: check,
+          pset: check.property_set,
+        });
+      }
+    });
+  }
+
   // Check if data has groups structure
   if (Array.isArray(objInfo.groups)) {
     html += objInfo.groups.map((group: any) => {
@@ -141,13 +174,35 @@ function renderElementProperties(objInfo: any, guid?: string): string {
 
       // Track existing properties
       props.forEach((prop: any) => {
-        existingProps.add(`${group.label}::${prop.key}`);
+        const propKey = `${group.label}::${prop.key}`;
+        existingProps.add(propKey);
       });
+
+      // Get missing properties for this PropertySet
+      const groupMissingProps: any[] = [];
+      if (showMissingProperties && importedEl && Array.isArray(importedEl.checks)) {
+        importedEl.checks.forEach((check: any) => {
+          if (check.property_set === group.label && check.property_name) {
+            const bareKey = check.property_name.startsWith(check.property_set + '.')
+              ? check.property_name.slice(check.property_set.length + 1)
+              : check.property_name;
+            const propKey = `${group.label}::${bareKey}`;
+            if (!existingProps.has(propKey)) {
+              groupMissingProps.push({
+                key: bareKey,
+                check: check,
+              });
+            }
+          }
+        });
+      }
+
+      const totalCount = props.length + groupMissingProps.length;
 
       return `
         <div style="margin-bottom: 12px;">
           <button data-group-id="${groupId}" style="width: 100%; padding: 10px 12px; background: #e8f4f8; border: 1px solid #0066cc; border-left: 4px solid #0066cc; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #0066cc; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
-            <span>${group.label} (${props.length})</span>
+            <span>${group.label} (${totalCount})</span>
             <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
           </button>
           ${isExpanded ? `
@@ -179,78 +234,35 @@ function renderElementProperties(objInfo: any, guid?: string): string {
                 </div>
               `;
               }).join('')}
+              ${groupMissingProps.length > 0 ? `
+                <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
+                  <div style="font-size: 11px; color: #ff9800; font-weight: bold; margin-bottom: 6px;">Missing Properties (${groupMissingProps.length})</div>
+                  ${groupMissingProps.map((p: any) => {
+                    const checkResult = p.check.result?.toUpperCase();
+                    const statusIcon = checkResult === 'PASS'
+                      ? '<span style="color: #4caf50; font-weight: bold; margin-left: 4px;" title="PASS">✓</span>'
+                      : checkResult === 'FAIL'
+                      ? '<span style="color: #d32f2f; font-weight: bold; margin-left: 4px;" title="FAIL">✗</span>'
+                      : '';
+                    return `
+                    <div style="margin-bottom: 8px; padding: 6px 8px; background: #fff9e6; border-left: 2px solid #ff9800; border-radius: 3px; font-size: 12px;">
+                      <div style="margin-bottom: 2px;">
+                        <strong style="color: #333;">${p.key}:</strong>
+                        <span style="color: #999; font-style: italic;">not found in element</span>
+                        ${statusIcon}
+                      </div>
+                      ${p.check.message ? `<div style="color: #666; margin-bottom: 2px;">${p.check.message}</div>` : ''}
+                      ${p.check.expected || p.check.actual ? `<div style="color: #999; font-size: 11px;">Expected: ${p.check.expected}, Got: ${p.check.actual}</div>` : ''}
+                    </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : ''}
             </div>
           ` : ''}
         </div>
       `;
     }).join('');
-  }
-
-  // Find missing properties from imported checks
-  const missingProps = new Map<string, any[]>();
-  if (importedEl && Array.isArray(importedEl.checks)) {
-    importedEl.checks.forEach((check: any) => {
-      if (check.property_set && check.property_name) {
-        const bareKey = check.property_name.startsWith(check.property_set + '.')
-          ? check.property_name.slice(check.property_set.length + 1)
-          : check.property_name;
-        const propKey = `${check.property_set}::${bareKey}`;
-
-        if (!existingProps.has(propKey)) {
-          if (!missingProps.has(check.property_set)) {
-            missingProps.set(check.property_set, []);
-          }
-          missingProps.get(check.property_set)!.push({
-            key: bareKey,
-            check: check,
-          });
-        }
-      }
-    });
-  }
-
-  // Display missing properties as an expandable section
-  if (missingProps.size > 0) {
-    const groupId = `missing-props-${groupIndex++}`;
-    const isExpanded = expandedGroups.has(groupId);
-    const totalMissing = Array.from(missingProps.values()).reduce((sum, arr) => sum + arr.length, 0);
-
-    html += `
-      <div style="margin-bottom: 12px;">
-        <button data-group-id="${groupId}" style="width: 100%; padding: 10px 12px; background: #fff3e0; border: 1px solid #ff9800; border-left: 4px solid #ff9800; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #ff9800; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
-          <span>Missing Properties (${totalMissing})</span>
-          <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
-        </button>
-        ${isExpanded ? `
-          <div style="padding: 8px; border-left: 2px solid #e0e0e0; margin-top: 4px;">
-            ${Array.from(missingProps.entries()).map(([propSet, props]: [string, any[]]) => `
-              <div style="margin-bottom: 12px;">
-                <div style="font-weight: bold; color: #ff9800; font-size: 12px; margin-bottom: 6px;">${propSet}</div>
-                ${props.map((p: any) => {
-                  const checkResult = p.check.result?.toUpperCase();
-                  const statusIcon = checkResult === 'PASS'
-                    ? '<span style="color: #4caf50; font-weight: bold; margin-left: 4px;" title="PASS">✓</span>'
-                    : checkResult === 'FAIL'
-                    ? '<span style="color: #d32f2f; font-weight: bold; margin-left: 4px;" title="FAIL">✗</span>'
-                    : '';
-                  return `
-                  <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
-                    <div style="margin-bottom: 2px;">
-                      <strong style="color: #333;">${p.key}:</strong>
-                      <span style="color: #999; font-style: italic;">not found in element</span>
-                      ${statusIcon}
-                    </div>
-                    ${p.check.message ? `<div style="color: #666; margin-bottom: 2px;">${p.check.message}</div>` : ''}
-                    ${p.check.expected || p.check.actual ? `<div style="color: #999; font-size: 11px;">Expected: ${p.check.expected}, Got: ${p.check.actual}</div>` : ''}
-                  </div>
-                  `;
-                }).join('')}
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
   }
 
   // Show any additional top-level properties not in groups
@@ -643,6 +655,8 @@ async function main() {
         input.click();
       } else if (button.dataset.action === 'clear-json') {
         clearImportedData();
+      } else if (button.dataset.action === 'toggle-missing') {
+        toggleMissingProperties();
       }
     }, false);
 
