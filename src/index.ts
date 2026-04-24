@@ -420,6 +420,9 @@ function loadImportedData(): Promise<void> {
     const elementsRequest = elementsStore.getAll();
     const metaRequest = metaStore.get('file-info');
 
+    let elementsLoaded = false;
+    let metaLoaded = false;
+
     elementsRequest.onsuccess = () => {
       const elements = elementsRequest.result;
       console.log(`Loading ${elements.length} elements from IndexedDB`);
@@ -427,24 +430,32 @@ function loadImportedData(): Promise<void> {
         importedData.set(el.global_id, el);
       });
       console.log(`importedData now has ${importedData.size} items`);
+      elementsLoaded = true;
+      if (metaLoaded) {
+        console.log('Load complete, importedData size:', importedData.size);
+        resolve();
+      }
     };
 
     metaRequest.onsuccess = () => {
       importedFileMeta = metaRequest.result || null;
       console.log('Meta loaded from IndexedDB:', importedFileMeta);
+      metaLoaded = true;
+      if (elementsLoaded) {
+        console.log('Load complete, importedData size:', importedData.size);
+        resolve();
+      }
     };
 
-    Promise.all([
-      new Promise((resolve) => {
-        elementsRequest.onsuccess = resolve;
-      }),
-      new Promise((resolve) => {
-        metaRequest.onsuccess = resolve;
-      }),
-    ]).then(() => {
-      console.log('Load complete, importedData size:', importedData.size);
-      resolve();
-    });
+    elementsRequest.onerror = () => {
+      console.error('Elements load error:', elementsRequest.error);
+      reject(elementsRequest.error);
+    };
+
+    metaRequest.onerror = () => {
+      console.error('Meta load error:', metaRequest.error);
+      reject(metaRequest.error);
+    };
   });
 }
 
