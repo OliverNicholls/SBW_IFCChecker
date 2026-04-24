@@ -112,7 +112,7 @@ function renderElementProperties(objInfo: any, guid?: string): string {
   if (!objInfo) return '<div style="color: #999;">No information available</div>';
 
   const checkLookup = new Map<string, any>();
-  const importedEl = importedData.get(guid);
+  const importedEl = guid ? importedData.get(guid) : undefined;
   if (guid && importedEl) {
     if (Array.isArray(importedEl?.checks)) {
       for (const c of importedEl.checks) {
