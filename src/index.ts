@@ -21,14 +21,42 @@ function switchTab(tab: 'properties' | 'checks') {
   renderUI();
 }
 
+async function clearImportedData() {
+  if (!confirm('Are you sure you want to clear all imported JSON data?')) {
+    return;
+  }
+
+  try {
+    if (db) {
+      const elementsStore = db.transaction('imported-elements', 'readwrite').objectStore('imported-elements');
+      const metaStore = db.transaction('meta', 'readwrite').objectStore('meta');
+
+      elementsStore.clear();
+      metaStore.clear();
+    }
+
+    importedData.clear();
+    importedFileMeta = null;
+    renderUI();
+  } catch (error) {
+    console.error('Error clearing imported data:', error);
+    alert('Failed to clear imported data');
+  }
+}
+
 function renderUI() {
   app.innerHTML = `
     <div style="padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h1 style="margin: 0; font-size: 24px;">BIM-spector</h1>
-        <button data-action="import-file" style="padding: 8px 12px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
-          Import Checks
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button data-action="import-file" style="padding: 8px 12px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
+            Import Checks
+          </button>
+          ${importedFileMeta ? `<button data-action="clear-json" style="padding: 8px 12px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
+            Clear JSON
+          </button>` : ''}
+        </div>
       </div>
       ${importedFileMeta ? `<div style="margin-bottom: 12px; padding: 8px 12px; background: #e8f4f8; border-radius: 4px; font-size: 12px; color: #0066cc;"><strong>${importedFileMeta.ifc_file}</strong> • ${importedFileMeta.generated_at} • ${importedData.size} elements</div>` : ''}
 
@@ -84,8 +112,8 @@ function renderElementProperties(objInfo: any, guid?: string): string {
   if (!objInfo) return '<div style="color: #999;">No information available</div>';
 
   const checkLookup = new Map<string, any>();
-  if (guid) {
-    const importedEl = importedData.get(guid);
+  const importedEl = importedData.get(guid);
+  if (guid && importedEl) {
     if (Array.isArray(importedEl?.checks)) {
       for (const c of importedEl.checks) {
         if (c.property_set && c.property_name && c.result) {
@@ -101,12 +129,21 @@ function renderElementProperties(objInfo: any, guid?: string): string {
   let html = '';
   let groupIndex = 0;
 
+  // Build a set of all properties that exist in objInfo
+  const existingProps = new Set<string>();
+
   // Check if data has groups structure
   if (Array.isArray(objInfo.groups)) {
     html += objInfo.groups.map((group: any) => {
       const groupId = `group-${groupIndex++}`;
       const isExpanded = expandedGroups.has(groupId);
       const props = group.content?.properties || [];
+
+      // Track existing properties
+      props.forEach((prop: any) => {
+        existingProps.add(`${group.label}::${prop.key}`);
+      });
+
       return `
         <div style="margin-bottom: 12px;">
           <button data-group-id="${groupId}" style="width: 100%; padding: 10px 12px; background: #e8f4f8; border: 1px solid #0066cc; border-left: 4px solid #0066cc; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #0066cc; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
@@ -147,6 +184,73 @@ function renderElementProperties(objInfo: any, guid?: string): string {
         </div>
       `;
     }).join('');
+  }
+
+  // Find missing properties from imported checks
+  const missingProps = new Map<string, any[]>();
+  if (importedEl && Array.isArray(importedEl.checks)) {
+    importedEl.checks.forEach((check: any) => {
+      if (check.property_set && check.property_name) {
+        const bareKey = check.property_name.startsWith(check.property_set + '.')
+          ? check.property_name.slice(check.property_set.length + 1)
+          : check.property_name;
+        const propKey = `${check.property_set}::${bareKey}`;
+
+        if (!existingProps.has(propKey)) {
+          if (!missingProps.has(check.property_set)) {
+            missingProps.set(check.property_set, []);
+          }
+          missingProps.get(check.property_set)!.push({
+            key: bareKey,
+            check: check,
+          });
+        }
+      }
+    });
+  }
+
+  // Display missing properties as an expandable section
+  if (missingProps.size > 0) {
+    const groupId = `missing-props-${groupIndex++}`;
+    const isExpanded = expandedGroups.has(groupId);
+    const totalMissing = Array.from(missingProps.values()).reduce((sum, arr) => sum + arr.length, 0);
+
+    html += `
+      <div style="margin-bottom: 12px;">
+        <button data-group-id="${groupId}" style="width: 100%; padding: 10px 12px; background: #fff3e0; border: 1px solid #ff9800; border-left: 4px solid #ff9800; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #ff9800; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+          <span>Missing Properties (${totalMissing})</span>
+          <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
+        </button>
+        ${isExpanded ? `
+          <div style="padding: 8px; border-left: 2px solid #e0e0e0; margin-top: 4px;">
+            ${Array.from(missingProps.entries()).map(([propSet, props]: [string, any[]]) => `
+              <div style="margin-bottom: 12px;">
+                <div style="font-weight: bold; color: #ff9800; font-size: 12px; margin-bottom: 6px;">${propSet}</div>
+                ${props.map((p: any) => {
+                  const checkResult = p.check.result?.toUpperCase();
+                  const statusIcon = checkResult === 'PASS'
+                    ? '<span style="color: #4caf50; font-weight: bold; margin-left: 4px;" title="PASS">✓</span>'
+                    : checkResult === 'FAIL'
+                    ? '<span style="color: #d32f2f; font-weight: bold; margin-left: 4px;" title="FAIL">✗</span>'
+                    : '';
+                  return `
+                  <div style="margin-bottom: 8px; padding: 6px 8px; background: #fafafa; border-radius: 3px; font-size: 12px;">
+                    <div style="margin-bottom: 2px;">
+                      <strong style="color: #333;">${p.key}:</strong>
+                      <span style="color: #999; font-style: italic;">not found in element</span>
+                      ${statusIcon}
+                    </div>
+                    ${p.check.message ? `<div style="color: #666; margin-bottom: 2px;">${p.check.message}</div>` : ''}
+                    ${p.check.expected || p.check.actual ? `<div style="color: #999; font-size: 11px;">Expected: ${p.check.expected}, Got: ${p.check.actual}</div>` : ''}
+                  </div>
+                  `;
+                }).join('')}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
   }
 
   // Show any additional top-level properties not in groups
@@ -537,6 +641,8 @@ async function main() {
           }
         };
         input.click();
+      } else if (button.dataset.action === 'clear-json') {
+        clearImportedData();
       }
     }, false);
 
