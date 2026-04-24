@@ -83,7 +83,7 @@ function renderPropertiesTab(): string {
 function renderElementProperties(objInfo: any, guid?: string): string {
   if (!objInfo) return '<div style="color: #999;">No information available</div>';
 
-  const checkLookup = new Map<string, string>();
+  const checkLookup = new Map<string, any>();
   if (guid) {
     const importedEl = importedData.get(guid);
     if (Array.isArray(importedEl?.checks)) {
@@ -92,7 +92,7 @@ function renderElementProperties(objInfo: any, guid?: string): string {
           const bareKey = c.property_name.startsWith(c.property_set + '.')
             ? c.property_name.slice(c.property_set.length + 1)
             : c.property_name;
-          checkLookup.set(`${c.property_set}::${bareKey}`, c.result.toUpperCase());
+          checkLookup.set(`${c.property_set}::${bareKey}`, c);
         }
       }
     }
@@ -116,7 +116,8 @@ function renderElementProperties(objInfo: any, guid?: string): string {
           ${isExpanded ? `
             <div style="padding: 8px; border-left: 2px solid #e0e0e0; margin-top: 4px;">
               ${props.map((prop: any) => {
-                const checkResult = checkLookup.get(`${group.label}::${prop.key}`);
+                const check = checkLookup.get(`${group.label}::${prop.key}`);
+                const checkResult = check?.result?.toUpperCase();
                 const statusIcon = checkResult === 'PASS'
                   ? '<span style="color: #4caf50; font-weight: bold; margin-left: 4px;" title="PASS">✓</span>'
                   : checkResult === 'FAIL'
@@ -131,6 +132,13 @@ function renderElementProperties(objInfo: any, guid?: string): string {
                   </div>
                   ${prop.measure ? `<div style="color: #999; font-size: 11px;">📏 ${prop.measure}${prop.unit ? ' (' + prop.unit + ')' : ''}</div>` : ''}
                   ${prop.valueType ? `<div style="color: #999; font-size: 11px;">Type: ${prop.valueType}</div>` : ''}
+                  ${check ? `
+                    <div style="margin-top: 4px; padding: 4px; background: ${checkResult === 'PASS' ? '#e8f5e9' : '#ffebee'}; border-radius: 2px;">
+                      <div style="color: ${checkResult === 'PASS' ? '#2e7d32' : '#c62828'}; font-weight: bold; font-size: 11px; margin-bottom: 2px;">Result: ${checkResult}</div>
+                      ${check.message ? `<div style="color: #666; font-size: 11px; margin-bottom: 2px;">${check.message}</div>` : ''}
+                      ${check.expected || check.actual ? `<div style="color: #999; font-size: 10px;">Expected: ${check.expected}, Got: ${check.actual}</div>` : ''}
+                    </div>
+                  ` : ''}
                 </div>
               `;
               }).join('')}
