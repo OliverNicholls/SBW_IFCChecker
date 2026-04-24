@@ -7,6 +7,7 @@ let activeTab: 'properties' | 'checks' = 'properties';
 let expandedGroups: Set<string> = new Set();
 let showMissingProperties: boolean = true;
 let db: IDBDatabase | null = null;
+let pinnedPsets: Set<string> = new Set();
 
 function toggleGroup(groupId: string) {
   if (expandedGroups.has(groupId)) {
@@ -15,6 +16,31 @@ function toggleGroup(groupId: string) {
     expandedGroups.add(groupId);
   }
   renderUI();
+}
+
+function togglePinPset(psetName: string) {
+  if (pinnedPsets.has(psetName)) {
+    pinnedPsets.delete(psetName);
+  } else {
+    pinnedPsets.add(psetName);
+  }
+  savePinnedPsets();
+  renderUI();
+}
+
+function savePinnedPsets() {
+  localStorage.setItem('pinnedPsets', JSON.stringify(Array.from(pinnedPsets)));
+}
+
+function loadPinnedPsets() {
+  const saved = localStorage.getItem('pinnedPsets');
+  if (saved) {
+    try {
+      pinnedPsets = new Set(JSON.parse(saved));
+    } catch (e) {
+      pinnedPsets = new Set();
+    }
+  }
 }
 
 function toggleMissingProperties() {
@@ -167,7 +193,18 @@ function renderElementProperties(objInfo: any, guid?: string): string {
 
   // Check if data has groups structure
   if (Array.isArray(objInfo.groups)) {
-    html += objInfo.groups.map((group: any) => {
+    const sortedGroups = [...objInfo.groups].sort((a: any, b: any) => {
+      const aIsPinned = pinnedPsets.has(a.label);
+      const bIsPinned = pinnedPsets.has(b.label);
+
+      if (aIsPinned !== bIsPinned) {
+        return aIsPinned ? -1 : 1;
+      }
+
+      return a.label.localeCompare(b.label);
+    });
+
+    html += sortedGroups.map((group: any) => {
       const groupId = `group-${groupIndex++}`;
       const isExpanded = expandedGroups.has(groupId);
       const props = group.content?.properties || [];
@@ -199,12 +236,18 @@ function renderElementProperties(objInfo: any, guid?: string): string {
 
       const totalCount = props.length + groupMissingProps.length;
 
+      const isPinned = pinnedPsets.has(group.label);
       return `
         <div style="margin-bottom: 12px;">
-          <button data-group-id="${groupId}" style="width: 100%; padding: 10px 12px; background: #e8f4f8; border: 1px solid #0066cc; border-left: 4px solid #0066cc; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: #0066cc; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
-            <span>${group.label} (${totalCount})</span>
-            <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
-          </button>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button data-group-id="${groupId}" style="flex: 1; padding: 10px 12px; background: ${isPinned ? '#fce4ec' : '#e8f4f8'}; border: 1px solid ${isPinned ? '#c2185b' : '#0066cc'}; border-left: 4px solid ${isPinned ? '#c2185b' : '#0066cc'}; border-radius: 2px; cursor: pointer; text-align: left; font-size: 13px; color: ${isPinned ? '#c2185b' : '#0066cc'}; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+              <span>${group.label} (${totalCount})</span>
+              <span style="transform: rotate(${isExpanded ? '180deg' : '0deg'}); transition: transform 0.2s;">▼</span>
+            </button>
+            <button data-action="toggle-pin-pset" data-pset="${group.label}" style="padding: 8px 10px; background: ${isPinned ? '#c2185b' : '#f0f0f0'}; color: ${isPinned ? 'white' : '#666'}; border: 1px solid ${isPinned ? '#c2185b' : '#ddd'}; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; min-width: 40px; text-align: center; transition: all 0.2s;" title="${isPinned ? 'Unpin this property set' : 'Pin this property set'}">
+              ${isPinned ? '📌' : '📍'}
+            </button>
+          </div>
           ${isExpanded ? `
             <div style="padding: 8px; border-left: 2px solid #e0e0e0; margin-top: 4px;">
               ${props.map((prop: any) => {
@@ -260,6 +303,7 @@ function renderElementProperties(objInfo: any, guid?: string): string {
               ` : ''}
             </div>
           ` : ''}
+          </div>
         </div>
       `;
     }).join('');
@@ -624,6 +668,7 @@ async function main() {
     // Initialize IndexedDB
     db = await initDB();
     await loadImportedData();
+    loadPinnedPsets();
 
     // Setup event delegation for persistent listeners
     app.addEventListener('click', (e: Event) => {
@@ -657,6 +702,11 @@ async function main() {
         clearImportedData();
       } else if (button.dataset.action === 'toggle-missing') {
         toggleMissingProperties();
+      } else if (button.dataset.action === 'toggle-pin-pset') {
+        const psetName = button.dataset.pset;
+        if (psetName) {
+          togglePinPset(psetName);
+        }
       }
     }, false);
 
