@@ -281,6 +281,7 @@ function renderElementProperties(objInfo: any, guid?: string): string {
                     <div style="margin-top: 4px; padding: 4px; background: ${checkResult === 'PASS' ? '#e8f5e9' : '#ffebee'}; border-radius: 2px;">
                       <div style="color: ${checkResult === 'PASS' ? '#2e7d32' : '#c62828'}; font-weight: bold; font-size: 11px; margin-bottom: 2px;">Result: ${checkResult}</div>
                       ${check.message ? `<div style="color: #666; font-size: 11px; margin-bottom: 2px;">${check.message}</div>` : ''}
+                      ${check.reason ? `<div style="color: #666; font-size: 11px; margin-bottom: 2px;">${check.reason}</div>` : ''}
                       ${check.expected || check.actual ? `<div style="color: #999; font-size: 10px;">Expected: ${check.expected}, Got: ${check.actual}</div>` : ''}
                     </div>
                   ` : ''}
@@ -298,6 +299,7 @@ function renderElementProperties(objInfo: any, guid?: string): string {
                         <span style="color: #ff9800; font-weight: bold; margin-left: 4px;" title="MISSING">⚠</span>
                       </div>
                       ${p.check.message ? `<div style="color: #999; font-size: 11px;">${p.check.message}</div>` : ''}
+                      ${p.check.reason ? `<div style="color: #666; font-size: 11px; margin-bottom: 2px;">${p.check.reason}</div>` : ''}
                       ${p.check.expected || p.check.actual ? `<div style="color: #999; font-size: 10px;">Expected: ${p.check.expected}, Got: ${p.check.actual}</div>` : ''}
                       <div style="margin-top: 4px; padding: 4px; background: #fff3e0; border-radius: 2px;">
                         <div style="color: #e65100; font-weight: bold; font-size: 11px;">Result: MISSING</div>
