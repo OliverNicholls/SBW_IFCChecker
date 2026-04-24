@@ -71,6 +71,14 @@ async function clearImportedData() {
     importedFileMeta = null;
     selectedElements.clear();
     selectedObjectInfoMap.clear();
+
+    // Clear highlights from the 3D view
+    if (typeof (window as any).StreamBIM !== 'undefined' && (window as any).StreamBIM._parent) {
+      (window as any).StreamBIM.deHighlightAllObjects().catch((err: any) => {
+        console.warn('Could not clear highlights:', err);
+      });
+    }
+
     renderUI();
   } catch (error) {
     console.error('Error clearing imported data:', error);
@@ -719,18 +727,25 @@ async function main() {
 
     // Connect to parent StreamBIM instance
     await StreamBIM.connect({
-      highlightObject: true,
       pickedObject: (element: any) => {
         console.log('Element selected:', element);
 
-        // If Shift is not held, clear previous selections
+        // If Shift is not held, clear previous selections and highlights
         if (!element.shiftKey) {
           selectedElements.clear();
           selectedObjectInfoMap.clear();
+          StreamBIM.deHighlightAllObjects().catch((err: any) => {
+            console.warn('Could not clear highlights:', err);
+          });
         }
 
-        // Add or replace the selection
+        // Add the selection
         selectedElements.set(element.guid, element);
+
+        // Highlight the selected object
+        StreamBIM.highlightObject(element.guid).catch((err: any) => {
+          console.warn('Could not highlight object:', err);
+        });
 
         // Get detailed object information using the guid
         StreamBIM.getObjectInfo(element.guid)
