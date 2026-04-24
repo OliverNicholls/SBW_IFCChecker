@@ -366,13 +366,18 @@ function saveImportedData(elements: any[], meta: any): Promise<void> {
     const metaStore = db.transaction('meta', 'readwrite').objectStore('meta');
 
     elementsStore.clear();
+    console.log(`Saving ${elements.length} elements to IndexedDB`);
     elements.forEach((el) => {
       elementsStore.add(el);
     });
 
     metaStore.put(meta, 'file-info');
+    console.log('Meta saved to IndexedDB:', meta);
 
-    setTimeout(() => resolve(), 100);
+    setTimeout(() => {
+      console.log('Save complete, resolving promise');
+      resolve();
+    }, 100);
   });
 }
 
@@ -388,13 +393,16 @@ function loadImportedData(): Promise<void> {
 
     elementsRequest.onsuccess = () => {
       const elements = elementsRequest.result;
+      console.log(`Loading ${elements.length} elements from IndexedDB`);
       elements.forEach((el) => {
         importedData.set(el.global_id, el);
       });
+      console.log(`importedData now has ${importedData.size} items`);
     };
 
     metaRequest.onsuccess = () => {
       importedFileMeta = metaRequest.result || null;
+      console.log('Meta loaded from IndexedDB:', importedFileMeta);
     };
 
     Promise.all([
@@ -404,7 +412,10 @@ function loadImportedData(): Promise<void> {
       new Promise((resolve) => {
         metaRequest.onsuccess = resolve;
       }),
-    ]).then(() => resolve());
+    ]).then(() => {
+      console.log('Load complete, importedData size:', importedData.size);
+      resolve();
+    });
   });
 }
 
@@ -414,7 +425,9 @@ function handleFileImport(file: File): Promise<void> {
 
     reader.onload = async (e) => {
       try {
+        console.log('File read, parsing JSON...');
         const json = JSON.parse(e.target?.result as string);
+        console.log('JSON parsed, elements count:', json.elements?.length);
 
         if (!Array.isArray(json.elements)) {
           throw new Error('Invalid JSON: missing "elements" array');
@@ -425,12 +438,16 @@ function handleFileImport(file: File): Promise<void> {
           generated_at: json.generated_at || new Date().toISOString(),
         };
 
+        console.log('Calling saveImportedData...');
         await saveImportedData(json.elements, meta);
+        console.log('Save complete, clearing and reloading...');
         importedData.clear();
         await loadImportedData();
+        console.log('Rendering UI, importedData size:', importedData.size);
         renderUI();
         resolve();
       } catch (error) {
+        console.error('handleFileImport error:', error);
         reject(error);
       }
     };
