@@ -958,32 +958,14 @@ async function main() {
             console.warn('Could not clear highlights:', err);
           });
 
-          let loadedCount = 0;
           filteredGuids.forEach((guid) => {
             selectedElements.set(guid, { guid });
             StreamBIM.highlightObject(guid).catch((err: any) => {
               console.warn('Could not highlight object:', err);
             });
-            StreamBIM.getObjectInfo(guid)
-              .then((objectInfo: any) => {
-                selectedObjectInfoMap.set(guid, objectInfo);
-                loadedCount++;
-                if (loadedCount === filteredGuids.length) {
-                  renderUI();
-                }
-              })
-              .catch((err: any) => {
-                console.error('Error getting object info:', err);
-                loadedCount++;
-                if (loadedCount === filteredGuids.length) {
-                  renderUI();
-                }
-              });
           });
 
-          if (filteredGuids.length === 0) {
-            renderUI();
-          }
+          renderUI();
         }
       } else if (button.dataset.action === 'highlight-element') {
         const guid = button.dataset.elementGuid;
