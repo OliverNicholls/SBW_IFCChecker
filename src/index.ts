@@ -9,6 +9,7 @@ let showMissingProperties: boolean = true;
 let db: IDBDatabase | null = null;
 let pinnedPsets: Set<string> = new Set();
 let selectedTest: string | null = null;
+let selectedTestFilter: 'passed' | 'failed' | null = null;
 
 function toggleGroup(groupId: string) {
   if (expandedGroups.has(groupId)) {
@@ -477,18 +478,23 @@ function renderTestDetailsView(): string {
       <button data-action="back-to-tests" style="padding: 8px 12px; background: #f0f0f0; color: #666; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-bottom: 12px;">
         ← Back to Tests
       </button>
-      <h2 style="margin: 0 0 8px 0; font-size: 16px; color: #333;">Test: ${selectedTest}</h2>
-      <div style="color: #999; font-size: 12px; margin-bottom: 12px;">
-        <span style="color: #4caf50; font-weight: bold;">${passed.length}</span> passed,
-        <span style="color: #d32f2f; font-weight: bold;">${failed.length}</span> failed
+      <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Test: ${selectedTest}</h2>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <button data-action="filter-test" data-filter="passed" style="flex: 1; padding: 10px 12px; background: ${selectedTestFilter === 'passed' ? '#4caf50' : '#e8f5e9'}; color: ${selectedTestFilter === 'passed' ? 'white' : '#4caf50'}; border: 2px solid #4caf50; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; transition: all 0.2s;">
+          ✓ Passed (${passed.length})
+        </button>
+        <button data-action="filter-test" data-filter="failed" style="flex: 1; padding: 10px 12px; background: ${selectedTestFilter === 'failed' ? '#d32f2f' : '#ffebee'}; color: ${selectedTestFilter === 'failed' ? 'white' : '#d32f2f'}; border: 2px solid #d32f2f; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; transition: all 0.2s;">
+          ✗ Failed (${failed.length})
+        </button>
       </div>
     </div>
 
-    ${failed.length > 0 ? `
+    ${selectedTestFilter === 'failed' && failed.length > 0 ? `
       <div style="margin-bottom: 16px;">
-        <div style="padding: 8px 12px; background: #ffebee; border-left: 4px solid #d32f2f; border-radius: 2px; margin-bottom: 8px;">
-          <strong style="color: #d32f2f; font-size: 13px;">Failed (${failed.length})</strong>
-        </div>
+        <button data-action="select-all-filtered" style="width: 100%; padding: 10px 12px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-bottom: 12px;">
+          Select All Failed (${failed.length})
+        </button>
         <div style="display: grid; gap: 8px;">
           ${failed.map(([guid, { check }]: [string, any]) => `
             <div data-element-guid="${guid}" data-action="highlight-element" style="padding: 10px 12px; background: #fafafa; border-left: 4px solid #d32f2f; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
@@ -510,11 +516,11 @@ function renderTestDetailsView(): string {
       </div>
     ` : ''}
 
-    ${passed.length > 0 ? `
+    ${selectedTestFilter === 'passed' && passed.length > 0 ? `
       <div style="margin-bottom: 16px;">
-        <div style="padding: 8px 12px; background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 2px; margin-bottom: 8px;">
-          <strong style="color: #4caf50; font-size: 13px;">Passed (${passed.length})</strong>
-        </div>
+        <button data-action="select-all-filtered" style="width: 100%; padding: 10px 12px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-bottom: 12px;">
+          Select All Passed (${passed.length})
+        </button>
         <div style="display: grid; gap: 8px;">
           ${passed.map(([guid, { check }]: [string, any]) => `
             <div data-element-guid="${guid}" data-action="highlight-element" style="padding: 10px 12px; background: #fafafa; border-left: 4px solid #4caf50; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
@@ -531,6 +537,12 @@ function renderTestDetailsView(): string {
             </div>
           `).join('')}
         </div>
+      </div>
+    ` : ''}
+
+    ${!selectedTestFilter ? `
+      <div style="color: #999; padding: 16px; text-align: center;">
+        Click Passed or Failed to see elements
       </div>
     ` : ''}
   `;
@@ -906,11 +918,73 @@ async function main() {
         const testName = button.dataset.testName;
         if (testName) {
           selectedTest = testName;
+          selectedTestFilter = null;
           renderUI();
         }
       } else if (button.dataset.action === 'back-to-tests') {
         selectedTest = null;
+        selectedTestFilter = null;
         renderUI();
+      } else if (button.dataset.action === 'filter-test') {
+        const filter = button.dataset.filter as 'passed' | 'failed';
+        selectedTestFilter = selectedTestFilter === filter ? null : filter;
+        renderUI();
+      } else if (button.dataset.action === 'select-all-filtered') {
+        if (selectedTest && selectedTestFilter && typeof (window as any).StreamBIM !== 'undefined') {
+          const StreamBIM = (window as any).StreamBIM;
+          const elementResults: Map<string, any> = new Map();
+
+          importedData.forEach((element: any, guid: string) => {
+            if (Array.isArray(element.checks)) {
+              element.checks.forEach((check: any) => {
+                const testName = check.spec_name || check.rule || check.name || 'Unnamed test';
+                if (testName === selectedTest) {
+                  const result = check.result?.toUpperCase() === 'PASS' || check.status === 'pass' || check.status === true ? 'PASS' : 'FAIL';
+                  if (!elementResults.has(guid)) {
+                    elementResults.set(guid, { result, check });
+                  }
+                }
+              });
+            }
+          });
+
+          const filteredGuids = Array.from(elementResults.entries())
+            .filter(([, v]) => (selectedTestFilter === 'passed' ? v.result === 'PASS' : v.result === 'FAIL'))
+            .map(([guid]) => guid);
+
+          selectedElements.clear();
+          selectedObjectInfoMap.clear();
+          StreamBIM.deHighlightAllObjects().catch((err: any) => {
+            console.warn('Could not clear highlights:', err);
+          });
+
+          let loadedCount = 0;
+          filteredGuids.forEach((guid) => {
+            selectedElements.set(guid, { guid });
+            StreamBIM.highlightObject(guid).catch((err: any) => {
+              console.warn('Could not highlight object:', err);
+            });
+            StreamBIM.getObjectInfo(guid)
+              .then((objectInfo: any) => {
+                selectedObjectInfoMap.set(guid, objectInfo);
+                loadedCount++;
+                if (loadedCount === filteredGuids.length) {
+                  renderUI();
+                }
+              })
+              .catch((err: any) => {
+                console.error('Error getting object info:', err);
+                loadedCount++;
+                if (loadedCount === filteredGuids.length) {
+                  renderUI();
+                }
+              });
+          });
+
+          if (filteredGuids.length === 0) {
+            renderUI();
+          }
+        }
       } else if (button.dataset.action === 'highlight-element') {
         const guid = button.dataset.elementGuid;
         if (guid && typeof (window as any).StreamBIM !== 'undefined') {
