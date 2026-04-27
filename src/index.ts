@@ -124,7 +124,7 @@ function renderUI() {
       </div>
 
       <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #eee; text-align: center;">
-        <img src="./Tikab_Logo_Blue.png" alt="Tikab Logo" style="height: 40px; width: auto;">
+        <img src="./Tikab_Logo_Blue.png" alt="Tikab Logo" style="height: 60px; width: auto;">
       </div>
     </div>
   `;
@@ -915,12 +915,24 @@ async function main() {
         const guid = button.dataset.elementGuid;
         if (guid && typeof (window as any).StreamBIM !== 'undefined') {
           const StreamBIM = (window as any).StreamBIM;
+          selectedElements.clear();
+          selectedObjectInfoMap.clear();
           StreamBIM.deHighlightAllObjects().catch((err: any) => {
             console.warn('Could not clear highlights:', err);
           });
+          selectedElements.set(guid, { guid });
           StreamBIM.highlightObject(guid).catch((err: any) => {
             console.warn('Could not highlight object:', err);
           });
+          StreamBIM.getObjectInfo(guid)
+            .then((objectInfo: any) => {
+              selectedObjectInfoMap.set(guid, objectInfo);
+              renderUI();
+            })
+            .catch((err: any) => {
+              console.error('Error getting object info:', err);
+              renderUI();
+            });
         }
       }
     }, false);
