@@ -8,6 +8,7 @@ let expandedGroups: Set<string> = new Set();
 let showMissingProperties: boolean = true;
 let db: IDBDatabase | null = null;
 let pinnedPsets: Set<string> = new Set();
+let selectedTest: string | null = null;
 
 function toggleGroup(groupId: string) {
   if (expandedGroups.has(groupId)) {
@@ -363,111 +364,176 @@ function renderChecksTab(): string {
     return '<div style="color: #999; padding: 16px; text-align: center;">Import a JSON file to see checks</div>';
   }
 
-  if (selectedElements.size === 0) {
-    return `
-      <div>
-        <div style="margin-bottom: 16px; padding: 12px; background: #e8f4f8; border-left: 4px solid #0066cc; border-radius: 2px;">
-          <strong style="color: #0066cc; font-size: 13px;">Imported Data</strong>
-          <div style="color: #666; font-size: 12px; margin-top: 4px;">
-            ${importedFileMeta ? `<div><strong>${importedFileMeta.ifc_file}</strong> • ${importedFileMeta.generated_at}</div>` : ''}
-            <div style="margin-top: 4px;"><strong>${importedData.size} elements imported</strong></div>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 16px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #333;">All Imported Elements</h3>
-          <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
-            ${Array.from(importedData.entries()).map(([guid, element]: [string, any]) => {
-              const checkCount = Array.isArray(element.checks) ? element.checks.length : 0;
-              return `
-                <div style="padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 12px;">
-                  <div style="font-family: monospace; color: #0066cc; font-size: 11px; margin-bottom: 2px;">${guid}</div>
-                  <div style="color: #666;"><strong>${checkCount}</strong> checks</div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-
-        <div style="color: #999; padding: 12px; text-align: center; font-size: 12px;">Select an element to see its specific checks</div>
-      </div>
-    `;
+  if (selectedTest) {
+    return renderTestDetailsView();
   }
+
+  return renderTestsListView();
+}
+
+function renderTestsListView(): string {
+  const testMap = new Map<string, { passed: number; failed: number; total: number; guids: string[] }>();
+
+  importedData.forEach((element: any, guid: string) => {
+    if (Array.isArray(element.checks)) {
+      element.checks.forEach((check: any) => {
+        const testName = check.spec_name || check.rule || check.name || 'Unnamed test';
+        const isPassed = check.result?.toUpperCase() === 'PASS' || check.status === 'pass' || check.status === true;
+
+        if (!testMap.has(testName)) {
+          testMap.set(testName, { passed: 0, failed: 0, total: 0, guids: [] });
+        }
+
+        const stats = testMap.get(testName)!;
+        stats.total++;
+        if (!stats.guids.includes(guid)) {
+          stats.guids.push(guid);
+        }
+        if (isPassed) {
+          stats.passed++;
+        } else {
+          stats.failed++;
+        }
+      });
+    }
+  });
+
+  if (testMap.size === 0) {
+    return '<div style="color: #999; padding: 16px; text-align: center;">No tests found in imported data</div>';
+  }
+
+  const sortedTests = Array.from(testMap.entries()).sort((a, b) => b[1].total - a[1].total);
 
   return `
     <div style="margin-bottom: 16px;">
-      <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #333;">Checks (${selectedElements.size})</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; font-size: 16px; color: #333;">Tests (${testMap.size})</h2>
+        <div style="color: #999; font-size: 12px;">Click on a test to visualize elements</div>
+      </div>
     </div>
-    ${Array.from(selectedElements.entries()).map(([guid]: [string, any]) => {
-      const importedElement = importedData.get(guid);
-      return `
-        <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #ddd;">
-          <div style="margin-bottom: 12px; padding: 10px 12px; background: #f0f0f0; border-radius: 4px;">
-            <strong style="color: #0066cc; font-size: 14px;">Element ${selectedElements.size > 1 ? '(' + Array.from(selectedElements.keys()).indexOf(guid) + 1 + ')' : ''}</strong>
-            <div style="color: #666; font-size: 11px; margin-top: 4px; font-family: monospace;">GUID: ${guid}</div>
+
+    <div style="display: grid; gap: 8px;">
+      ${sortedTests.map(([testName, stats]: [string, any]) => {
+        const successRate = (stats.passed / stats.total) * 100;
+        const getColor = (rate: number) => {
+          if (rate === 100) return '#4caf50';
+          if (rate >= 75) return '#8bc34a';
+          if (rate >= 50) return '#ff9800';
+          return '#d32f2f';
+        };
+        const barColor = getColor(successRate);
+        return `
+          <div data-action="select-test" data-test-name="${testName}" style="padding: 12px; background: #f9f9f9; border-radius: 6px; border: 1px solid #e0e0e0; cursor: pointer; transition: all 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+              <div style="flex: 1;">
+                <div style="font-weight: bold; color: #0066cc; font-size: 13px; word-break: break-word;">${testName}</div>
+                <div style="color: #999; font-size: 11px; margin-top: 4px;">
+                  <span style="color: #4caf50; font-weight: bold;">${stats.passed}</span>
+                  <span style="color: #666;">passed,</span>
+                  <span style="color: #d32f2f; font-weight: bold;">${stats.failed}</span>
+                  <span style="color: #666;">failed of</span>
+                  <span style="font-weight: bold; color: #333;">${stats.total}</span>
+                  <span style="color: #666;">checks across</span>
+                  <span style="font-weight: bold; color: #333;">${stats.guids.length}</span>
+                  <span style="color: #666;">elements</span>
+                </div>
+              </div>
+              <div style="text-align: right; margin-left: 12px;">
+                <div style="font-weight: bold; font-size: 16px; color: ${barColor};">${successRate.toFixed(0)}%</div>
+              </div>
+            </div>
+            <div style="width: 100%; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden;">
+              <div style="width: ${successRate}%; height: 100%; background: ${barColor}; transition: width 0.3s ease;"></div>
+            </div>
           </div>
-          ${renderElementChecks(importedElement)}
-        </div>
-      `;
-    }).join('')}
+        `;
+      }).join('')}
+    </div>
   `;
 }
 
-function renderElementChecks(importedElement: any): string {
-  if (!importedElement) {
-    return '<div style="color: #999; padding: 8px;">No check data for this element</div>';
-  }
+function renderTestDetailsView(): string {
+  if (!selectedTest) return '';
 
-  if (!Array.isArray(importedElement.checks) || importedElement.checks.length === 0) {
-    return '<div style="color: #999; padding: 8px;">No checks defined for this element</div>';
-  }
+  const elementResults: Map<string, { result: string; check: any }> = new Map();
 
-  const passes = importedElement.checks.filter((c: any) => c.result?.toUpperCase() === 'PASS' || c.status === 'pass' || c.status === true);
-  const failures = importedElement.checks.filter((c: any) => c.result?.toUpperCase() === 'FAIL' || c.status === 'fail' || c.status === false);
+  importedData.forEach((element: any, guid: string) => {
+    if (Array.isArray(element.checks)) {
+      element.checks.forEach((check: any) => {
+        const testName = check.spec_name || check.rule || check.name || 'Unnamed test';
+        if (testName === selectedTest) {
+          const result = check.result?.toUpperCase() === 'PASS' || check.status === 'pass' || check.status === true ? 'PASS' : 'FAIL';
+          elementResults.set(guid, { result, check });
+        }
+      });
+    }
+  });
 
-  let html = '';
+  const passed = Array.from(elementResults.entries()).filter(([, v]) => v.result === 'PASS');
+  const failed = Array.from(elementResults.entries()).filter(([, v]) => v.result === 'FAIL');
 
-  if (failures.length > 0) {
-    html += `
-      <div style="margin-bottom: 12px;">
+  return `
+    <div style="margin-bottom: 16px;">
+      <button data-action="back-to-tests" style="padding: 8px 12px; background: #f0f0f0; color: #666; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-bottom: 12px;">
+        ← Back to Tests
+      </button>
+      <h2 style="margin: 0 0 8px 0; font-size: 16px; color: #333;">Test: ${selectedTest}</h2>
+      <div style="color: #999; font-size: 12px; margin-bottom: 12px;">
+        <span style="color: #4caf50; font-weight: bold;">${passed.length}</span> passed,
+        <span style="color: #d32f2f; font-weight: bold;">${failed.length}</span> failed
+      </div>
+    </div>
+
+    ${failed.length > 0 ? `
+      <div style="margin-bottom: 16px;">
         <div style="padding: 8px 12px; background: #ffebee; border-left: 4px solid #d32f2f; border-radius: 2px; margin-bottom: 8px;">
-          <strong style="color: #d32f2f; font-size: 13px;">Failed (${failures.length})</strong>
+          <strong style="color: #d32f2f; font-size: 13px;">Failed (${failed.length})</strong>
         </div>
-        ${failures.map((check: any) => `
-          <div style="margin-bottom: 8px; padding: 8px; background: #fafafa; border-left: 2px solid #d32f2f; border-radius: 2px; font-size: 12px;">
-            <div style="display: flex; align-items: center; margin-bottom: 4px;">
-              <span style="display: inline-block; width: 8px; height: 8px; background: #d32f2f; border-radius: 50%; margin-right: 6px;"></span>
-              <strong style="color: #333;">${check.spec_name || check.rule || check.name || 'Unnamed check'}</strong>
+        <div style="display: grid; gap: 8px;">
+          ${failed.map(([guid, { check }]: [string, any]) => `
+            <div data-element-guid="${guid}" data-action="highlight-element" style="padding: 10px 12px; background: #fafafa; border-left: 4px solid #d32f2f; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
+              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+                <div style="flex: 1; word-break: break-all;">
+                  <div style="font-family: monospace; color: #d32f2f; font-size: 11px; margin-bottom: 4px; word-break: break-all;">${guid}</div>
+                  <div style="color: #666; font-size: 12px;"><strong>${check.requirement_ref || 'No requirement'}</strong></div>
+                </div>
+                <div style="margin-left: 8px; white-space: nowrap;">
+                  <span style="display: inline-block; width: 8px; height: 8px; background: #d32f2f; border-radius: 50%; margin-right: 6px;"></span>
+                  <span style="color: #d32f2f; font-weight: bold; font-size: 12px;">FAIL</span>
+                </div>
+              </div>
+              ${check.reason ? `<div style="color: #666; font-size: 11px; margin-bottom: 4px;">${check.reason}</div>` : ''}
+              ${check.expected_value ? `<div style="color: #999; font-size: 11px;">Expected: ${check.expected_value}, Got: ${check.actual_value}</div>` : ''}
             </div>
-            ${check.requirement_ref ? `<div style="color: #999; font-size: 11px; margin-bottom: 2px;">Requirement: ${check.requirement_ref}</div>` : ''}
-            ${check.reason ? `<div style="color: #666; margin-bottom: 4px;">${check.reason}</div>` : ''}
-            ${check.expected_value ? `<div style="color: #999; font-size: 11px;">Expected: ${check.expected_value}, Got: ${check.actual_value}</div>` : ''}
-          </div>
-        `).join('')}
+          `).join('')}
+        </div>
       </div>
-    `;
-  }
+    ` : ''}
 
-  if (passes.length > 0) {
-    html += `
-      <div style="margin-bottom: 12px;">
+    ${passed.length > 0 ? `
+      <div style="margin-bottom: 16px;">
         <div style="padding: 8px 12px; background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 2px; margin-bottom: 8px;">
-          <strong style="color: #4caf50; font-size: 13px;">Passed (${passes.length})</strong>
+          <strong style="color: #4caf50; font-size: 13px;">Passed (${passed.length})</strong>
         </div>
-        ${passes.map((check: any) => `
-          <div style="margin-bottom: 8px; padding: 8px; background: #fafafa; border-left: 2px solid #4caf50; border-radius: 2px; font-size: 12px;">
-            <div style="display: flex; align-items: center; margin-bottom: 4px;">
-              <span style="display: inline-block; width: 8px; height: 8px; background: #4caf50; border-radius: 50%; margin-right: 6px;"></span>
-              <strong style="color: #333;">${check.spec_name || check.rule || check.name || 'Unnamed check'}</strong>
+        <div style="display: grid; gap: 8px;">
+          ${passed.map(([guid, { check }]: [string, any]) => `
+            <div data-element-guid="${guid}" data-action="highlight-element" style="padding: 10px 12px; background: #fafafa; border-left: 4px solid #4caf50; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
+              <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="flex: 1; word-break: break-all;">
+                  <div style="font-family: monospace; color: #4caf50; font-size: 11px; margin-bottom: 4px; word-break: break-all;">${guid}</div>
+                  <div style="color: #666; font-size: 12px;"><strong>${check.requirement_ref || 'No requirement'}</strong></div>
+                </div>
+                <div style="margin-left: 8px; white-space: nowrap;">
+                  <span style="display: inline-block; width: 8px; height: 8px; background: #4caf50; border-radius: 50%; margin-right: 6px;"></span>
+                  <span style="color: #4caf50; font-weight: bold; font-size: 12px;">PASS</span>
+                </div>
+              </div>
             </div>
-            ${check.requirement_ref ? `<div style="color: #999; font-size: 11px;">Requirement: ${check.requirement_ref}</div>` : ''}
-          </div>
-        `).join('')}
+          `).join('')}
+        </div>
       </div>
-    `;
-  }
-
-  return html;
+    ` : ''}
+  `;
 }
 
 function renderDashboardTab(): string {
@@ -835,6 +901,26 @@ async function main() {
         const psetName = button.dataset.pset;
         if (psetName) {
           togglePinPset(psetName);
+        }
+      } else if (button.dataset.action === 'select-test') {
+        const testName = button.dataset.testName;
+        if (testName) {
+          selectedTest = testName;
+          renderUI();
+        }
+      } else if (button.dataset.action === 'back-to-tests') {
+        selectedTest = null;
+        renderUI();
+      } else if (button.dataset.action === 'highlight-element') {
+        const guid = button.dataset.elementGuid;
+        if (guid && typeof (window as any).StreamBIM !== 'undefined') {
+          const StreamBIM = (window as any).StreamBIM;
+          StreamBIM.deHighlightAllObjects().catch((err: any) => {
+            console.warn('Could not clear highlights:', err);
+          });
+          StreamBIM.highlightObject(guid).catch((err: any) => {
+            console.warn('Could not highlight object:', err);
+          });
         }
       }
     }, false);
