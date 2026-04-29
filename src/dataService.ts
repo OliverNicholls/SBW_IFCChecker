@@ -40,17 +40,35 @@ export interface ValidationData {
 
 async function fetchFromSupabase(): Promise<ValidationData> {
   console.log('Fetching from Supabase...');
-  const { data, error } = await supabase
-    .from('validation_results')
-    .select('*')
-    .order('ifc_file', { ascending: false })
-    .order('global_id', { ascending: true });
 
-  if (error) {
-    throw new Error(`Supabase fetch error: ${error.message}`);
+  const allData: any[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('validation_results')
+      .select('*')
+      .order('ifc_file', { ascending: false })
+      .order('global_id', { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      throw new Error(`Supabase fetch error: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    allData.push(...data);
+    hasMore = data.length === pageSize;
+    from += pageSize;
   }
 
-  if (!data || data.length === 0) {
+  if (allData.length === 0) {
     return {
       ifc_file: 'No data',
       generated_at: new Date().toISOString(),
@@ -58,6 +76,8 @@ async function fetchFromSupabase(): Promise<ValidationData> {
       elements: [],
     };
   }
+
+  const data = allData;
 
   // Transform flat rows into nested structure
   const elementsMap = new Map<string, ValidationElement>();
