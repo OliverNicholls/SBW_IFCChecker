@@ -1,3 +1,5 @@
+import { DataService } from './dataService';
+
 const app = document.getElementById('app')!;
 let selectedElements: Map<string, any> = new Map();
 let selectedObjectInfoMap: Map<string, any> = new Map();
@@ -10,6 +12,7 @@ let db: IDBDatabase | null = null;
 let pinnedPsets: Set<string> = new Set();
 let selectedTest: string | null = null;
 let selectedTestFilter: 'passed' | 'failed' | null = null;
+let loadingData: boolean = false;
 
 function toggleGroup(groupId: string) {
   if (expandedGroups.has(groupId)) {
@@ -94,11 +97,14 @@ function renderUI() {
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h1 style="margin: 0; font-size: 24px;">BIM-spector</h1>
         <div style="display: flex; gap: 8px;">
-          <button data-action="import-file" style="padding: 8px 12px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
-            Import Checks
+          <button data-action="import-file" style="padding: 8px 12px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; ${loadingData ? 'opacity: 0.6; cursor: not-allowed;' : ''}">
+            ${loadingData ? '⏳' : '📁'} Import JSON
+          </button>
+          <button data-action="load-database" style="padding: 8px 12px; background: #6200ea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; ${loadingData ? 'opacity: 0.6; cursor: not-allowed;' : ''}">
+            ${loadingData ? '⏳ Loading...' : '🗄️ Load DB'}
           </button>
           ${importedFileMeta ? `<button data-action="clear-json" style="padding: 8px 12px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
-            Clear JSON
+            Clear
           </button>` : ''}
         </div>
       </div>
@@ -826,42 +832,35 @@ function loadImportedData(): Promise<void> {
   });
 }
 
+async function loadValidationData(data: any): Promise<void> {
+  const meta = {
+    ifc_file: data.ifc_file,
+    generated_at: data.generated_at,
+  };
+
+  console.log('Saving validation data...');
+  await saveImportedData(data.elements, meta);
+  console.log('Save complete, reloading...');
+  importedData.clear();
+  await loadImportedData();
+  console.log('Data loaded, importedData size:', importedData.size);
+}
+
 function handleFileImport(file: File): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+  return DataService.fetchFromJSON(file).then((data) =>
+    loadValidationData(data).then(() => renderUI())
+  );
+}
 
-    reader.onload = async (e) => {
-      try {
-        console.log('File read, parsing JSON...');
-        const json = JSON.parse(e.target?.result as string);
-        console.log('JSON parsed, elements count:', json.elements?.length);
-
-        if (!Array.isArray(json.elements)) {
-          throw new Error('Invalid JSON: missing "elements" array');
-        }
-
-        const meta = {
-          ifc_file: json.ifc_file || file.name,
-          generated_at: json.generated_at || new Date().toISOString(),
-        };
-
-        console.log('Calling saveImportedData...');
-        await saveImportedData(json.elements, meta);
-        console.log('Save complete, clearing and reloading...');
-        importedData.clear();
-        await loadImportedData();
-        console.log('Rendering UI, importedData size:', importedData.size);
-        renderUI();
-        resolve();
-      } catch (error) {
-        console.error('handleFileImport error:', error);
-        reject(error);
-      }
-    };
-
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsText(file);
-  });
+async function loadFromDatabase(): Promise<void> {
+  try {
+    const data = await DataService.fetchFromSupabase();
+    await loadValidationData(data);
+    renderUI();
+  } catch (error) {
+    console.error('Database load error:', error);
+    alert(`Failed to load from database: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 async function main() {
@@ -889,6 +888,7 @@ async function main() {
       } else if (button.dataset.groupId) {
         toggleGroup(button.dataset.groupId);
       } else if (button.dataset.action === 'import-file') {
+        if (loadingData) return;
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.json';
@@ -896,15 +896,33 @@ async function main() {
           const file = (e.target as HTMLInputElement).files?.[0];
           if (!file) return;
 
+          loadingData = true;
+          renderUI();
           try {
             await handleFileImport(file);
             console.log('File imported successfully');
           } catch (err) {
             console.error('Import error:', err);
             alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          } finally {
+            loadingData = false;
+            renderUI();
           }
         };
         input.click();
+      } else if (button.dataset.action === 'load-database') {
+        if (loadingData) return;
+        loadingData = true;
+        renderUI();
+        loadFromDatabase()
+          .catch((err) => {
+            console.error('Database load error:', err);
+            alert(`Failed to load from database: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          })
+          .finally(() => {
+            loadingData = false;
+            renderUI();
+          });
       } else if (button.dataset.action === 'clear-json') {
         clearImportedData();
       } else if (button.dataset.action === 'toggle-missing') {
